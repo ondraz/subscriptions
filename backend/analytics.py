@@ -5,8 +5,8 @@ from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from .models import MetricData, MetricType
-from .database import ClickhouseClient
+from models import MetricData, MetricType
+from database import ClickhouseClient
 
 
 class AnalyticsEngine:
@@ -143,8 +143,8 @@ class AnalyticsEngine:
             for date, value in sorted(mrr_by_period.items())
         ]
         
-        # If no data, generate sample data for demonstration
-        if not result:
+        # If no data or all zeros, generate sample data for demonstration
+        if not result or all(item.value == 0 for item in result):
             result = self._generate_sample_mrr(start_date, end_date, interval)
         
         return result
@@ -224,8 +224,8 @@ class AnalyticsEngine:
             for date, value in sorted(renewal_by_period.items())
         ]
         
-        # If no data, generate sample data
-        if not result:
+        # If no data or all zeros, generate sample data
+        if not result or all(item.value == 0 for item in result):
             result = self._generate_sample_renewal_rate(start_date, end_date, interval)
         
         return result
@@ -286,8 +286,8 @@ class AnalyticsEngine:
             for date, value in sorted(ltv_by_period.items())
         ]
         
-        # If no data, generate sample data
-        if not result:
+        # If no data or all zeros, generate sample data
+        if not result or all(item.value == 0 for item in result):
             result = self._generate_sample_ltv(start_date, end_date, interval)
         
         return result
@@ -344,8 +344,8 @@ class AnalyticsEngine:
             for date, value in sorted(retention_by_period.items())
         ]
         
-        # If no data, generate sample data
-        if not result:
+        # If no data or all zeros, generate sample data
+        if not result or all(item.value == 0 for item in result):
             result = self._generate_sample_retention(start_date, end_date, interval)
         
         return result
@@ -394,8 +394,8 @@ class AnalyticsEngine:
             for date, value in sorted(churn_by_period.items())
         ]
         
-        # If no data, generate sample data
-        if not result:
+        # If no data or all zeros, generate sample data
+        if not result or all(item.value == 0 for item in result):
             result = self._generate_sample_churn(start_date, end_date, interval)
         
         return result
@@ -436,8 +436,8 @@ class AnalyticsEngine:
             for date, value in sorted(count_by_period.items())
         ]
         
-        # If no data, generate sample data
-        if not result:
+        # If no data or all zeros, generate sample data
+        if not result or all(item.value == 0 for item in result):
             result = self._generate_sample_customers(start_date, end_date, interval)
         
         return result

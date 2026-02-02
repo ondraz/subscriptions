@@ -8,9 +8,9 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 import uvicorn
 
-from .models import MetricData, MetricType
-from .analytics import AnalyticsEngine
-from .database import ClickhouseClient
+from models import MetricData, MetricType
+from analytics import AnalyticsEngine
+from database import ClickhouseClient
 
 app = FastAPI(
     title="Subscription Analytics API",
@@ -36,6 +36,21 @@ analytics_engine = AnalyticsEngine(db_client)
 async def root():
     """Health check endpoint."""
     return {"status": "healthy", "service": "subscription-analytics"}
+
+
+@app.get("/api/metrics/summary")
+async def get_metrics_summary():
+    """
+    Get current summary of all key metrics.
+    
+    Returns:
+        Dictionary with current values for all metrics
+    """
+    try:
+        summary = await analytics_engine.get_summary()
+        return summary
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching summary: {str(e)}")
 
 
 @app.get("/api/metrics/{metric_type}")
@@ -85,21 +100,6 @@ async def get_metric(
         raise HTTPException(status_code=500, detail=f"Error fetching metric: {str(e)}")
 
 
-@app.get("/api/metrics/summary")
-async def get_metrics_summary():
-    """
-    Get current summary of all key metrics.
-    
-    Returns:
-        Dictionary with current values for all metrics
-    """
-    try:
-        summary = await analytics_engine.get_summary()
-        return summary
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching summary: {str(e)}")
-
-
 @app.post("/api/sync/stripe")
 async def sync_stripe_data():
     """
@@ -109,7 +109,7 @@ async def sync_stripe_data():
         Sync status and statistics
     """
     try:
-        from .stripe_sync import StripeSync
+        from stripe_sync import StripeSync
         
         sync_service = StripeSync(db_client)
         result = await sync_service.sync_all()
