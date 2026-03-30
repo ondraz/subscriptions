@@ -1,0 +1,97 @@
+{
+  "_meta": {
+    "template_version": 0,
+    "description": "Quick Stripe seed: 3 plans, 1 customer, 1 subscription. For richer data use stripe_seed.py."
+  },
+  "fixtures": [
+    {
+      "name": "starter_product",
+      "path": "/v1/products",
+      "method": "post",
+      "params": {
+        "name": "Starter"
+      }
+    },
+    {
+      "name": "starter_monthly",
+      "path": "/v1/prices",
+      "method": "post",
+      "params": {
+        "product": "${starter_product:id}",
+        "unit_amount": 2900,
+        "currency": "usd",
+        "recurring": {
+          "interval": "month"
+        }
+      }
+    },
+    {
+      "name": "pro_product",
+      "path": "/v1/products",
+      "method": "post",
+      "params": {
+        "name": "Professional"
+      }
+    },
+    {
+      "name": "pro_monthly",
+      "path": "/v1/prices",
+      "method": "post",
+      "params": {
+        "product": "${pro_product:id}",
+        "unit_amount": 7900,
+        "currency": "usd",
+        "recurring": {
+          "interval": "month"
+        }
+      }
+    },
+    {
+      "name": "enterprise_product",
+      "path": "/v1/products",
+      "method": "post",
+      "params": {
+        "name": "Enterprise"
+      }
+    },
+    {
+      "name": "enterprise_monthly",
+      "path": "/v1/prices",
+      "method": "post",
+      "params": {
+        "product": "${enterprise_product:id}",
+        "unit_amount": 24900,
+        "currency": "usd",
+        "recurring": {
+          "interval": "month"
+        }
+      }
+    },
+    {
+      "name": "customer",
+      "path": "/v1/customers",
+      "method": "post",
+      "params": {
+        "name": "Quick Test Customer",
+        "email": "quick-test@example.com",
+        "payment_method": "pm_card_visa",
+        "invoice_settings": {
+          "default_payment_method": "pm_card_visa"
+        }
+      }
+    },
+    {
+      "name": "subscription",
+      "path": "/v1/subscriptions",
+      "method": "post",
+      "params": {
+        "customer": "${customer:id}",
+        "items": [
+          {
+            "price": "${pro_monthly:id}"
+          }
+        ]
+      }
+    }
+  ]
+}

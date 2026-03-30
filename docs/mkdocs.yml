@@ -33,13 +33,26 @@ markdown_extensions:
   - tables
   - admonition
   - pymdownx.highlight
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.details
   - toc:
       permalink: true
 
 nav:
   - Home: index.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Events: architecture/events.md
+      - Database: architecture/database.md
+      - Connectors: architecture/connectors.md
+      - Metrics: architecture/metrics.md
+      - API: architecture/api.md
+      - Deployment: architecture/deployment.md
+      - Testing: architecture/testing.md
   - Research:
       - Market Overview: research/market-overview.md
       - Business Models: research/business-models.md

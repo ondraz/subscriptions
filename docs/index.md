@@ -1,6 +1,19 @@
 # Subscriptions
 
-Open-source subscription analytics — compute and visualize MRR, ARR, LTV, retention, churn, and more from your Stripe data.
+Open-source subscription analytics — compute and visualize MRR, ARR, LTV, retention, churn, and more from your billing data.
+
+## Architecture
+
+Implementation plan for the analytics engine.
+
+- [Overview](architecture/overview.md) — event-driven system design with Kafka
+- [Events](architecture/events.md) — internal event schema and Kafka topics
+- [Database](architecture/database.md) — PostgreSQL schema, ER diagram, and rationale
+- [Connectors](architecture/connectors.md) — webhook translators for Stripe, Lago, Kill Bill
+- [Metrics](architecture/metrics.md) — metric plugin system with self-managed tables
+- [API](architecture/api.md) — FastAPI endpoints
+- [Deployment](architecture/deployment.md) — Docker Compose on Hetzner, path to Kubernetes
+- [Testing](architecture/testing.md) — Stripe Test Clocks, seed scripts, webhook forwarding
 
 ## Research
 

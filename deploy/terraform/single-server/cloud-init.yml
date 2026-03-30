@@ -1,0 +1,38 @@
+#cloud-config
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - unattended-upgrades
+
+# Install Docker via official script
+runcmd:
+  # Install Docker
+  - curl -fsSL https://get.docker.com | sh
+
+  # Clone repo and start services
+  - git clone https://github.com/ondraz/subscriptions.git /opt/subscriptions
+  - cd /opt/subscriptions/deploy/compose
+
+  # Generate secrets and write .env
+  - |
+    cat > /opt/subscriptions/deploy/compose/.env <<EOF
+    POSTGRES_PASSWORD=$(openssl rand -hex 24)
+    DOMAIN=${domain}
+    EOF
+
+  # Start services
+  - docker compose -f /opt/subscriptions/deploy/compose/docker-compose.yml up -d
+
+  # Enable automatic security updates
+  - systemctl enable --now unattended-upgrades
+
+# Reboot after initial setup if kernel was updated
+power_state:
+  delay: now
+  mode: reboot
+  condition: test -f /var/run/reboot-required

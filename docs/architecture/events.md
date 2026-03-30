@@ -1,0 +1,141 @@
+# Events
+
+> Internal event schema and Kafka topics.
+> Last updated: March 2026
+
+## Overview
+
+Every change in a billing system is translated by a [connector](connectors.md) into an internal event, published to Kafka, and consumed by the core state manager and [metric plugins](metrics.md).
+
+Internal events are the single source of truth. They are immutable, ordered, and replayable.
+
+## Event Envelope
+
+Every event has the same envelope:
+
+```python
+@dataclass(frozen=True)
+class Event:
+    id: UUID                    # unique event ID (idempotency key)
+    source_id: UUID             # which connector_source produced this
+    type: str                   # e.g. "subscription.activated"
+    occurred_at: datetime       # when it happened in the billing system
+    published_at: datetime      # when we published to Kafka
+    customer_id: str            # external customer ID (Kafka partition key)
+    payload: dict               # type-specific data (see below)
+```
+
+`customer_id` is the Kafka partition key. All events for a given customer land on the same partition, preserving ordering per customer.
+
+## Event Types
+
+### Customer Events
+
+| Type | Trigger | Payload |
+|------|---------|---------|
+| `customer.created` | New customer in billing system | `{external_id, name, email, currency, metadata}` |
+| `customer.updated` | Customer details changed | `{external_id, changed_fields}` |
+| `customer.deleted` | Customer removed | `{external_id}` |
+
+### Subscription Events
+
+The most important events for metric computation.
+
+| Type | Trigger | Payload |
+|------|---------|---------|
+| `subscription.created` | New subscription | `{external_id, customer_external_id, plan_external_id, status, mrr_cents, quantity, started_at, trial_start, trial_end, current_period_start, current_period_end}` |
+| `subscription.activated` | Trial → active, or pending → active | `{external_id, mrr_cents}` |
+| `subscription.changed` | Plan or quantity changed | `{external_id, prev_plan_external_id, new_plan_external_id, prev_mrr_cents, new_mrr_cents, prev_quantity, new_quantity}` |
+| `subscription.canceled` | Subscription set to cancel at period end | `{external_id, mrr_cents, canceled_at, ends_at}` |
+| `subscription.churned` | Subscription ended (no longer active) | `{external_id, prev_mrr_cents}` |
+| `subscription.reactivated` | Previously churned customer re-subscribes | `{external_id, mrr_cents}` |
+| `subscription.trial_started` | Free trial begins | `{external_id, trial_start, trial_end}` |
+| `subscription.trial_converted` | Trial → paid | `{external_id, mrr_cents}` |
+| `subscription.trial_expired` | Trial ended without conversion | `{external_id}` |
+| `subscription.paused` | Subscription paused | `{external_id, mrr_cents}` |
+| `subscription.resumed` | Subscription resumed from pause | `{external_id, mrr_cents}` |
+
+**MRR classification:** The difference between `prev_mrr_cents` and `new_mrr_cents` in `subscription.changed` determines whether it's expansion (new > prev) or contraction (new < prev). Metric plugins use this to compute net new MRR breakdown.
+
+### Invoice Events
+
+| Type | Trigger | Payload |
+|------|---------|---------|
+| `invoice.created` | New invoice generated | `{external_id, customer_external_id, subscription_external_id, status, currency, subtotal_cents, tax_cents, total_cents, period_start, period_end, line_items[]}` |
+| `invoice.paid` | Invoice payment succeeded | `{external_id, paid_at, amount_cents}` |
+| `invoice.voided` | Invoice canceled | `{external_id, voided_at}` |
+| `invoice.uncollectible` | Invoice marked uncollectible | `{external_id}` |
+
+### Payment Events
+
+| Type | Trigger | Payload |
+|------|---------|---------|
+| `payment.succeeded` | Payment completed | `{external_id, invoice_external_id, customer_external_id, amount_cents, currency, payment_method_type}` |
+| `payment.failed` | Payment attempt failed | `{external_id, invoice_external_id, customer_external_id, amount_cents, failure_reason, attempt_count}` |
+| `payment.refunded` | Payment refunded | `{external_id, amount_cents, refunded_at}` |
+
+### Usage Events
+
+| Type | Trigger | Payload |
+|------|---------|---------|
+| `usage.recorded` | Usage data received | `{customer_external_id, subscription_external_id, metric_code, quantity, properties, timestamp}` |
+
+## Kafka Topics
+
+| Topic | Partition Key | Description |
+|-------|--------------|-------------|
+| `subscriptions.events` | `customer_id` | All internal events (single topic) |
+| `subscriptions.events.dlq` | `customer_id` | Dead letter queue for failed processing |
+
+A single topic keeps event ordering simple. Consumers use the `type` field to filter.
+
+For high-volume deployments, events can be split into separate topics per entity type (`subscriptions.events.subscription`, `subscriptions.events.invoice`, etc.) at the cost of weaker cross-entity ordering guarantees.
+
+## Consumer Groups
+
+| Group | Consumes | Purpose |
+|-------|----------|---------|
+| `subscriptions.state` | All events | Updates core PostgreSQL tables (current state) |
+| `subscriptions.metric.mrr` | `subscription.*` | MRR metric plugin |
+| `subscriptions.metric.churn` | `subscription.*`, `customer.*` | Churn metric plugin |
+| `subscriptions.metric.retention` | `subscription.*`, `customer.*` | Retention metric plugin |
+| `subscriptions.metric.ltv` | `subscription.*`, `invoice.*`, `payment.*` | LTV metric plugin |
+| `subscriptions.metric.trials` | `subscription.trial_*`, `subscription.activated` | Trials metric plugin |
+
+Each metric plugin runs in its own consumer group, so it maintains its own offset. This means:
+
+- Plugins process events independently (a slow plugin doesn't block others)
+- A new plugin can be added and replayed from offset 0 to backfill
+- A plugin can be reset (seek to beginning) to recompute from scratch
+
+## Idempotency
+
+Events carry a unique `id` (UUID). Consumers must be idempotent — processing the same event twice produces the same result. This is enforced by:
+
+1. Storing the last processed `event.id` per consumer group
+2. Using `INSERT ... ON CONFLICT DO NOTHING` for append-only tables
+3. Using `INSERT ... ON CONFLICT DO UPDATE` for current-state tables
+
+## Event Persistence
+
+Events are persisted in two places:
+
+1. **Kafka** — the primary log, retained for a configurable period (default: 30 days)
+2. **PostgreSQL `event_log` table** — permanent archive for replay and audit
+
+```sql
+CREATE TABLE event_log (
+    id          UUID PRIMARY KEY,
+    source_id   UUID NOT NULL REFERENCES connector_source(id),
+    type        TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    published_at TIMESTAMPTZ NOT NULL,
+    payload     JSONB NOT NULL
+);
+
+CREATE INDEX ix_event_log_type_time ON event_log(type, occurred_at);
+CREATE INDEX ix_event_log_customer ON event_log(customer_id, occurred_at);
+```
+
+When Kafka retention expires, or when bootstrapping a new deployment, the `event_log` table is the replay source.

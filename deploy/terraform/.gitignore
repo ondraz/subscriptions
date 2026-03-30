@@ -1,0 +1,16 @@
+# Terraform state (contains secrets)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Variable files with secrets
+terraform.tfvars
+*.auto.tfvars
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Generated kubeconfig
+kubeconfig*
