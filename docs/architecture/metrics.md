@@ -47,47 +47,34 @@ from sqlalchemy import MetaData
 
 
 @dataclass
-class SegmentFilter:
-    """Declarative filter and dimensional cut for metric queries.
+class QuerySpec:
+    """Declarative query specification resolved against a metric's SemanticModel.
 
-    **Filters** restrict which rows are included (WHERE clauses).
-    **group_by** splits the result into one row per dimension value (GROUP BY).
+    Dimensions and filters reference names defined in the model (e.g., "plan_interval",
+    "customer_country"). The model validates them and compiles to SQL via fragment
+    composition. See [Semantic Models & Query Algebra](cubes.md) for details.
 
-    All filter fields are optional. Unset fields are not filtered on.
-    Multiple values in a list are OR'd; across fields are AND'd.
-
-    When group_by is set, query() returns a list of dicts:
-        [{"plan_id": "plan_pro", "mrr_usd": 4200.00}, ...]
-    When group_by is empty, query() returns a scalar or time series as usual.
+    When dimensions is set, query() returns a list of dicts:
+        [{"plan_interval": "monthly", "mrr": 4200.00}, ...]
+    When dimensions is empty, query() returns a scalar or time series as usual.
     """
-    # --- Filters (WHERE) ---
-
-    # Billing source filter
-    source_ids: list[str] = field(default_factory=list)
-
-    # Customer attribute filters
-    customer_ids: list[str] = field(default_factory=list)
-    customer_tags: list[str] = field(default_factory=list)   # e.g. ["enterprise", "pilot"]
-    customer_country: list[str] = field(default_factory=list)  # ISO 3166-1 alpha-2
-
-    # Subscription attribute filters
-    plan_ids: list[str] = field(default_factory=list)
-    plan_intervals: list[str] = field(default_factory=list)  # "monthly" | "yearly" | ...
-    subscription_statuses: list[str] = field(default_factory=list)
-
-    # Currency filter (aggregates in USD when unset)
-    currencies: list[str] = field(default_factory=list)  # ISO 4217; empty = all (USD aggregate)
-
-    # --- Dimensional cut (GROUP BY) ---
-
-    # Dimensions to group by. Supported values (metrics declare which they support):
+    # Dimensions to group by (names from model.Dimensions)
     #   "plan_id"          — one row per plan
     #   "plan_interval"    — one row per billing interval (monthly/yearly/...)
     #   "customer_country" — one row per country
     #   "source_id"        — one row per billing source
     #   "currency"         — one row per currency (uses *_cents, not USD aggregate)
     #   "cohort_month"     — retention-specific: one row per cohort
-    group_by: list[str] = field(default_factory=list)
+    dimensions: list[str] = field(default_factory=list)
+
+    # Filters: dimension_name → value (equality) or {op: value} for other operators
+    #   {"customer_country": "US"}                    — equality
+    #   {"plan_interval": {"in": ["monthly", "yearly"]}} — IN list
+    filters: dict[str, Any] = field(default_factory=dict)
+
+    # Time bucketing
+    granularity: str | None = None        # day | week | month | quarter | year
+    time_range: tuple[str, str] | None = None
 
 
 class Metric(ABC):
@@ -131,12 +118,12 @@ class Metric(ABC):
         raise NotImplementedError("This metric does not support event-driven mode")
 
     @abstractmethod
-    async def query(self, params: dict, segment: SegmentFilter | None = None) -> Any:
+    async def query(self, params: dict, spec: QuerySpec | None = None) -> Any:
         """Answer a metric query.
 
         params: query-type-specific parameters (at, start, end, interval, ...)
-        segment: optional filter to restrict results to a subset of data.
-                 All built-in metrics support segmentation.
+        spec:   optional QuerySpec with dimensions and filters. Names reference
+                the metric's SemanticModel. All built-in metrics support this.
 
         Async — issues SQL via AsyncSession or awaits DatabaseConnector methods.
         """
@@ -159,11 +146,11 @@ class MrrMetric(Metric):
                    "subscription.churned", "subscription.reactivated",
                    "subscription.paused", "subscription.resumed"]
 
-    async def query(self, params, segment=None):
+    async def query(self, params, spec=None):
         if self.connector:  # same-database mode (Lago/Kill Bill)
-            return await self._query_direct(params, segment)
+            return await self._query_direct(params, spec)
         # Ingestion mode (Stripe) — primary path
-        return await self._query_materialized(params, segment)
+        return await self._query_materialized(params, spec)
 
 
 @register
@@ -172,7 +159,7 @@ class QuickRatioMetric(Metric):
     dependencies = ["mrr"]   # engine injects mrr metric at startup
     event_types = []         # no direct event subscription — reads mrr tables
 
-    async def query(self, params, segment=None):
+    async def query(self, params, spec=None):
         # Queries metric_mrr_movement directly (injected via self.plugins["mrr"])
         ...
 ```
@@ -317,124 +304,126 @@ async def handle_event(self, event: Event) -> None:
 **Queries (dual-mode):**
 
 ```python
-async def query(self, params: dict, segment=None) -> Any:
+async def query(self, params: dict, spec=None) -> Any:
     match params.get("query_type"):
         case "current":
             if self.connector:
                 # Same-database mode: query billing tables directly
                 return await self.connector.get_mrr_usd_cents(params.get("at"))
             # Ingestion mode (primary): query materialized metric_mrr_snapshot
-            return await self._current_mrr(params.get("at"), segment)
+            return await self._current_mrr(params.get("at"), spec)
         case "series":
             return await self._mrr_series(params["start"], params["end"],
-                                          params["interval"], segment)
+                                          params["interval"], spec)
         case "breakdown":
-            return await self._mrr_breakdown(params["start"], params["end"], segment)
+            return await self._mrr_breakdown(params["start"], params["end"], spec)
         case "arr":
-            return await self.query({**params, "query_type": "current"}, segment) * 12
+            return await self.query({**params, "query_type": "current"}, spec) * 12
 ```
 
-**Query building with `QueryBuilder`:**
+**Query building with semantic models and fragment composition:**
 
-`metric_mrr_snapshot` and `metric_mrr_movement` carry `source_id`, `customer_id`, `subscription_id`, and `currency`. `QueryBuilder` adds joins to `subscription`, `plan`, and `customer` lazily — only when a filter or `group_by` dimension actually needs them.
+Each MRR query method composes `QueryFragment` objects from `MRRSnapshotModel` or `MRRMovementModel`. The model declares available joins, measures, and dimensions; fragments carry the required joins automatically. See [Semantic Models & Query Algebra](cubes.md) for the full approach.
 
 ```python
-async def _current_mrr(self, at: date | None, segment: SegmentFilter | None):
-    # Use original-currency amounts when caller requested per-currency grouping
-    amount_col = "mrr_cents" if (segment and "currency" in segment.group_by) else "mrr_usd_cents"
+async def _current_mrr(self, at: date | None, spec: QuerySpec | None):
+    # Use original-currency measure when caller groups by currency
+    use_original = spec and "currency" in (spec.dimensions or [])
+    m = self.model  # MRRSnapshotModel
+    measure = m.measures.mrr_original if use_original else m.measures.mrr
 
-    qb = (
-        QueryBuilder("metric_mrr_snapshot", alias="s")
-        .select((func.sum(_col(f"s.{amount_col}")) / 100).label("mrr"))
-        .where(_col("s.mrr_usd_cents") > 0)
-    )
+    # Base: always-present fragments
+    q = measure + m.where("s.mrr_usd_cents", ">", 0)
+
+    # Time filter
     if at:
-        qb = qb.where(_col("s.snapshot_at") <= bindparam("at"), at=at)
+        q = q + m.filter("snapshot_at", "<=", at)
 
-    stmt, params = qb.apply_segment(segment).build()
+    # Apply user-requested dimensions and filters from spec
+    if spec:
+        q = q + m.apply_spec(spec)
+
+    stmt, params = q.compile(m)
     result = await self.db.execute(stmt, params)
     rows = result.mappings().all()
-    # Scalar when no group_by, list of dicts when grouped
-    if not (segment and segment.group_by):
+
+    # Scalar when no dimensions, list of dicts when grouped
+    if not spec or not spec.dimensions:
         return rows[0]["mrr"] if rows else 0
     return [dict(r) for r in rows]
 ```
 
-**Example: SQL generated by `QueryBuilder` for `_current_mrr` with various segments**
+**Example: SQL generated for `_current_mrr` with various specs**
 
-No segment — plain aggregate:
+No spec — plain aggregate:
 ```sql
 SELECT SUM(s.mrr_usd_cents) / 100.0 AS mrr
 FROM metric_mrr_snapshot s
 WHERE s.mrr_usd_cents > 0
 ```
 
-`SegmentFilter(plan_intervals=["yearly"])` — filter only, no group_by:
+`QuerySpec(filters={"plan_interval": {"in": ["yearly"]}})` — filter only, no dimensions:
 ```sql
 SELECT SUM(s.mrr_usd_cents) / 100.0 AS mrr
 FROM metric_mrr_snapshot s
-JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
-JOIN plan p ON p.id = sub.plan_id
+  JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
+  JOIN plan p ON p.id = sub.plan_id
 WHERE s.mrr_usd_cents > 0
-  AND p.interval = ANY(:plan_intervals)
--- params: {"plan_intervals": ["yearly"]}
+  AND p.interval = ANY(:plan_interval)
 ```
 
-`SegmentFilter(group_by=["plan_interval", "customer_country"])` — dimensional cut:
+`QuerySpec(dimensions=["plan_interval", "customer_country"])` — dimensional cut:
 ```sql
-SELECT SUM(s.mrr_usd_cents) / 100.0 AS mrr,
-       p.interval AS plan_interval,
-       c.country AS customer_country
+SELECT p.interval AS plan_interval,
+       c.country AS customer_country,
+       SUM(s.mrr_usd_cents) / 100.0 AS mrr
 FROM metric_mrr_snapshot s
-JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
-JOIN plan p ON p.id = sub.plan_id
-JOIN customer c ON c.source_id = s.source_id AND c.external_id = s.customer_id
+  JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
+  JOIN plan p ON p.id = sub.plan_id
+  JOIN customer c ON c.source_id = s.source_id AND c.external_id = s.customer_id
 WHERE s.mrr_usd_cents > 0
 GROUP BY p.interval, c.country
 ```
 
-`SegmentFilter(customer_country=["US", "DE"], group_by=["plan_id"])` — filter + cut combined:
+`QuerySpec(filters={"customer_country": {"in": ["US", "DE"]}}, dimensions=["plan_id"])` — filter + dimension:
 ```sql
-SELECT SUM(s.mrr_usd_cents) / 100.0 AS mrr,
-       sub.plan_id
+SELECT sub.plan_id,
+       SUM(s.mrr_usd_cents) / 100.0 AS mrr
 FROM metric_mrr_snapshot s
-JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
-JOIN customer c ON c.source_id = s.source_id AND c.external_id = s.customer_id
+  JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
+  JOIN customer c ON c.source_id = s.source_id AND c.external_id = s.customer_id
 WHERE s.mrr_usd_cents > 0
   AND c.country = ANY(:customer_country)
 GROUP BY sub.plan_id
--- params: {"customer_country": ["US", "DE"]}
 ```
 
-**Breakdown query with `QueryBuilder`:**
+**Breakdown query with fragment composition:**
 
 ```python
-async def _mrr_breakdown(self, start: date, end: date, segment: SegmentFilter | None):
-    stmt, params = (
-        QueryBuilder("metric_mrr_movement", alias="m")
-        .select(
-            _col("m.movement_type").label("movement_type"),
-            (func.sum(_col("m.amount_usd_cents")) / 100).label("amount_usd"),
-        )
-        .where(
-            _col("m.occurred_at").between(bindparam("start"), bindparam("end")),
-            start=start, end=end,
-        )
-        .group_by(_col("m.movement_type"))
-        .apply_segment(segment)
-        .build()
+async def _mrr_breakdown(self, start: date, end: date, spec: QuerySpec | None):
+    mm = self.movement_model  # MRRMovementModel
+
+    q = (
+        mm.measures.amount
+        + mm.dimension("movement_type")
+        + mm.filter("occurred_at", "between", (start, end))
     )
+
+    if spec:
+        q = q + mm.apply_spec(spec)
+
+    stmt, params = q.compile(mm)
     result = await self.db.execute(stmt, params)
     return [dict(r) for r in result.mappings().all()]
 ```
 
-**Example: breakdown SQL generated by `QueryBuilder` with `SegmentFilter(group_by=["plan_id"])`:**
+**Example: breakdown SQL with `QuerySpec(dimensions=["plan_id"])`:**
 ```sql
 SELECT m.movement_type,
-       SUM(m.amount_usd_cents) / 100.0 AS amount_usd,
-       sub.plan_id
+       sub.plan_id,
+       SUM(m.amount_usd_cents) / 100.0 AS amount_usd
 FROM metric_mrr_movement m
-JOIN subscription sub ON sub.source_id = m.source_id AND sub.external_id = m.subscription_id
+  JOIN subscription sub ON sub.source_id = m.source_id AND sub.external_id = m.subscription_id
 WHERE m.occurred_at BETWEEN :start AND :end
 GROUP BY m.movement_type, sub.plan_id
 ```
@@ -641,14 +630,18 @@ class MetricsEngine:
         self,
         metric: str,
         params: dict,
-        segment: SegmentFilter | None = None,
+        spec: QuerySpec | None = None,
     ) -> Any:
         """Route a query to the named metric. Works for any registered metric —
-        built-in or custom — without engine changes."""
+        built-in or custom — without engine changes.
+
+        spec is validated against the metric's SemanticModel before execution.
+        Invalid dimension/filter names raise ValueError with available options.
+        """
         if metric not in self._metrics:
             raise KeyError(f"No metric registered for '{metric}'. "
                            f"Available: {sorted(self._metrics)}")
-        return await self._metrics[metric].query(params, segment=segment)
+        return await self._metrics[metric].query(params, spec=spec)
 
     def available_metrics(self) -> list[str]:
         """Return names of all registered metrics. Synchronous."""
@@ -666,323 +659,78 @@ await engine.query("mrr", {"query_type": "series", "start": date(2025,1,1), "end
 await engine.query("churn", {"start": date(2026,1,1), "end": date(2026,3,1), "type": "revenue"})
 await engine.query("quick_ratio", {"start": date(2026,1,1), "end": date(2026,3,1)})
 
-# With segmentation
-segment = SegmentFilter(plan_ids=["plan_enterprise"], currencies=["EUR"])
-await engine.query("mrr", {"query_type": "current"}, segment=segment)
+# With dimensions and filters via QuerySpec
+spec = QuerySpec(
+    dimensions=["plan_interval", "customer_country"],
+    filters={"customer_country": "US"},
+    granularity="month",
+)
+await engine.query("mrr", {"query_type": "current"}, spec=spec)
+
+# Per-currency breakdown (uses original-currency amounts)
+await engine.query("mrr", {"query_type": "current"},
+                   spec=QuerySpec(dimensions=["currency"]))
 
 # Synchronous — no I/O
 engine.available_metrics()
 # ['churn', 'ltv', 'mrr', 'quick_ratio', 'retention', 'trials']
 ```
 
-The same `engine.query()` call is used from FastAPI, CLI, and Jupyter. The HTTP API maps URL path segments to metric names and query parameters to `params` + `segment`.
+The same `engine.query()` call is used from FastAPI, CLI, and Jupyter. The HTTP API maps URL path segments to metric names, query parameters to `params`, and dimension/filter parameters to `QuerySpec`.
 
-## Segmentation
+## Segmentation (QuerySpec)
 
-`SegmentFilter` does two things:
+`QuerySpec` replaces the old hardcoded filter approach with a model-driven system. It does two things:
 
-1. **Filters** (WHERE) — restrict which rows are included
-2. **Dimensional cuts** (GROUP BY via `group_by`) — split the result by a dimension
+1. **Filters** — restrict which rows are included (`filters` dict → WHERE clauses)
+2. **Dimensional cuts** — split the result by named dimensions (`dimensions` list → GROUP BY)
 
-All built-in metrics support both.
+Both reference dimension names defined in the metric's [SemanticModel](cubes.md). The model validates names at query time and resolves joins automatically.
 
-### Filter Dimensions
+### Available Dimensions
 
-| Field | SQL effect | Example |
-|-------|-----------|---------|
-| `source_ids` | `WHERE source_id = ANY(...)` | Multi-source deployments |
-| `customer_ids` | `WHERE customer_id = ANY(...)` | Single-account drill-down |
-| `customer_tags` | `JOIN customer_tag WHERE tag = ANY(...)` | `["enterprise", "pilot"]` |
-| `customer_country` | `WHERE customer.country = ANY(...)` | `["US", "DE"]` |
-| `plan_ids` | `WHERE plan_id = ANY(...)` | Per-plan filter |
-| `plan_intervals` | `WHERE plan.interval = ANY(...)` | Monthly vs. annual |
-| `subscription_statuses` | `WHERE status = ANY(...)` | Active-only, trialing, etc. |
-| `currencies` | `WHERE currency = ANY(...)` | Per-currency amounts (uses `*_cents`) |
+Each metric's semantic model declares which dimensions are available. Common dimensions across metric models:
 
-### Dimensional Cuts (`group_by`)
+| Dimension | Column | Join required | Example |
+|-----------|--------|---------------|---------|
+| `source_id` | fact table `source_id` | none | Multi-source deployments |
+| `currency` | fact table `currency` | none | Per-currency amounts (uses `*_cents`) |
+| `plan_id` | `sub.plan_id` | subscription | MRR per plan |
+| `plan_interval` | `p.interval` | subscription → plan | Monthly vs. annual |
+| `customer_country` | `c.country` | customer | Churn rate by country |
+| `movement_type` | `m.movement_type` | none (MRR movement only) | MRR breakdown |
+| `cohort_month` | `rc.cohort_month` | none (retention only) | Cohort matrix |
 
-When `group_by` is set, the query groups results by those dimensions instead of returning a single aggregate. Metrics declare which `group_by` values they support.
+Multiple dimensions can be combined: `dimensions=["plan_interval", "customer_country"]` gives MRR for each interval × country combination.
 
-| `group_by` value | SQL effect | Example result |
-|-----------------|-----------|----------------|
-| `"plan_id"` | `GROUP BY plan_id` | MRR per plan |
-| `"plan_interval"` | `GROUP BY plan.interval` | MRR by monthly vs. annual |
-| `"customer_country"` | `GROUP BY customer.country` | Churn rate by country |
-| `"source_id"` | `GROUP BY source_id` | MRR per billing source |
-| `"currency"` | `GROUP BY currency` | Revenue per currency (uses `*_cents`) |
-| `"cohort_month"` | retention-specific | Cohort retention matrix |
+### Return Shape
 
-Multiple dimensions can be combined: `group_by=["plan_interval", "customer_country"]` gives MRR for each interval × country combination.
-
-**Return shape with `group_by`:**
+**With dimensions:**
 
 ```python
-# engine.query("mrr", {"query_type": "current"}, segment=SegmentFilter(group_by=["plan_id"]))
+# engine.query("mrr", {"query_type": "current"}, spec=QuerySpec(dimensions=["plan_id"]))
 [
-    {"plan_id": "plan_starter",      "mrr_usd": 2900.00},
-    {"plan_id": "plan_professional", "mrr_usd": 6320.00},
-    {"plan_id": "plan_enterprise",   "mrr_usd": 3230.00},
+    {"plan_id": "plan_starter",      "mrr": 2900.00},
+    {"plan_id": "plan_professional", "mrr": 6320.00},
+    {"plan_id": "plan_enterprise",   "mrr": 3230.00},
 ]
 
-# group_by=["plan_interval", "customer_country"]
+# dimensions=["plan_interval", "customer_country"]
 [
-    {"plan_interval": "monthly", "customer_country": "US",  "mrr_usd": 4100.00},
-    {"plan_interval": "monthly", "customer_country": "DE",  "mrr_usd":  980.00},
-    {"plan_interval": "yearly",  "customer_country": "US",  "mrr_usd": 5200.00},
+    {"plan_interval": "monthly", "customer_country": "US", "mrr": 4100.00},
+    {"plan_interval": "monthly", "customer_country": "DE", "mrr":  980.00},
+    {"plan_interval": "yearly",  "customer_country": "US", "mrr": 5200.00},
     ...
 ]
 ```
 
-**Return shape without `group_by`:** scalar or time-series as usual.
+**Without dimensions:** scalar or time-series as usual.
 
-### QueryBuilder
+### Semantic Models & Query Algebra
 
-All metrics build their SQL through a shared `QueryBuilder` (`subscriptions/metrics/query.py`). It accumulates a SQLAlchemy `Select` statement via proper statement-manipulation methods (`.add_columns()`, `.where()`, `.join()`, `.group_by()`) — no string concatenation. JOINs are added lazily only when a filter or group_by dimension requires them, and resolved in dependency order.
+All metrics build their SQL through semantic models and composable query fragments (`subscriptions/metrics/query.py`). Each metric declares a `SemanticModel` that defines the available joins, measures, and dimensions for its fact table. Query methods compose immutable `QueryFragment` objects — each fragment carries column expressions, filters, and required joins. The compiler resolves joins in dependency order and emits a SQLAlchemy `Select`.
 
-```python
-# subscriptions/metrics/query.py
-
-from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Any, Callable, ClassVar
-
-from sqlalchemy import Select, and_, bindparam, func, literal_column, select, table
-from sqlalchemy.sql.elements import ClauseElement
-
-
-@dataclass
-class _JoinDef:
-    # Returns (join_target, on_clause) as SQLAlchemy expressions.
-    # `a` is the base table alias (e.g. "s").
-    join_fn: Callable[[str], tuple[Any, ClauseElement]]
-    depends_on: list[str]
-
-
-@dataclass
-class _DimDef:
-    # Returns labelled column expression for SELECT.
-    select_fn: Callable[[str], ClauseElement]
-    # Returns column expression for GROUP BY.
-    group_by_fn: Callable[[str], ClauseElement]
-    requires_joins: list[str]
-
-
-@dataclass
-class _FilterDef:
-    # Returns a WHERE ClauseElement. `a` = base alias, `pk` = bind param name.
-    condition_fn: Callable[[str, str], ClauseElement]
-    param_key: str
-    requires_joins: list[str]
-    get_value: Callable[[SegmentFilter], list]
-
-
-def _col(expr: str) -> ClauseElement:
-    """Shorthand: literal SQL column/expression reference."""
-    return literal_column(expr)
-
-
-class QueryBuilder:
-    """
-    Fluent metric SQL builder backed by a SQLAlchemy Select statement.
-
-    The builder accumulates column expressions, WHERE conditions, JOINs, and
-    GROUP BY clauses using SQLAlchemy's Select API. apply_segment() drives the
-    SegmentFilter → statement transformation. build() returns the finished
-    Select and the bind-params dict; callers pass both to db.execute().
-
-    Usage:
-        stmt, params = (
-            QueryBuilder("metric_mrr_snapshot", alias="s")
-            .select(func.sum(_col("s.mrr_usd_cents")) / 100)
-            .where(_col("s.mrr_usd_cents") > 0)
-            .apply_segment(segment)
-            .build()
-        )
-        rows = await db.execute(stmt, params)
-    """
-
-    # ------------------------------------------------------------------ #
-    # Class-level registries                                              #
-    # ------------------------------------------------------------------ #
-
-    _JOINS: ClassVar[dict[str, _JoinDef]] = {
-        "subscription": _JoinDef(
-            join_fn=lambda a: (
-                table("subscription").alias("sub"),
-                and_(
-                    _col("sub.source_id")   == _col(f"{a}.source_id"),
-                    _col("sub.external_id") == _col(f"{a}.subscription_id"),
-                ),
-            ),
-            depends_on=[],
-        ),
-        "plan": _JoinDef(
-            join_fn=lambda a: (
-                table("plan").alias("p"),
-                _col("p.id") == _col("sub.plan_id"),
-            ),
-            depends_on=["subscription"],
-        ),
-        "customer": _JoinDef(
-            join_fn=lambda a: (
-                table("customer").alias("c"),
-                and_(
-                    _col("c.source_id")   == _col(f"{a}.source_id"),
-                    _col("c.external_id") == _col(f"{a}.customer_id"),
-                ),
-            ),
-            depends_on=[],
-        ),
-        "customer_tag": _JoinDef(
-            join_fn=lambda a: (
-                table("customer_tag").alias("ct"),
-                and_(
-                    _col("ct.source_id")   == _col(f"{a}.source_id"),
-                    _col("ct.customer_id") == _col(f"{a}.customer_id"),
-                ),
-            ),
-            depends_on=[],
-        ),
-    }
-
-    _DIMS: ClassVar[dict[str, _DimDef]] = {
-        "source_id":        _DimDef(lambda a: _col(f"{a}.source_id").label("source_id"),         lambda a: _col(f"{a}.source_id"),  []),
-        "customer_id":      _DimDef(lambda a: _col(f"{a}.customer_id").label("customer_id"),     lambda a: _col(f"{a}.customer_id"),[]),
-        "currency":         _DimDef(lambda a: _col(f"{a}.currency").label("currency"),           lambda a: _col(f"{a}.currency"),   []),
-        "plan_id":          _DimDef(lambda a: _col("sub.plan_id").label("plan_id"),              lambda a: _col("sub.plan_id"),     ["subscription"]),
-        "plan_interval":    _DimDef(lambda a: _col("p.interval").label("plan_interval"),         lambda a: _col("p.interval"),      ["subscription", "plan"]),
-        "customer_country": _DimDef(lambda a: _col("c.country").label("customer_country"),       lambda a: _col("c.country"),       ["customer"]),
-        "customer_tag":     _DimDef(lambda a: _col("ct.tag").label("customer_tag"),              lambda a: _col("ct.tag"),          ["customer_tag"]),
-    }
-
-    _FILTER_DEFS: ClassVar[dict[str, _FilterDef]] = {
-        "source_ids":       _FilterDef(lambda a, pk: _col(f"{a}.source_id").in_(bindparam(pk, expanding=True)),       "source_ids",       [], lambda s: s.source_ids),
-        "customer_ids":     _FilterDef(lambda a, pk: _col(f"{a}.customer_id").in_(bindparam(pk, expanding=True)),     "customer_ids",     [], lambda s: s.customer_ids),
-        "currencies":       _FilterDef(lambda a, pk: _col(f"{a}.currency").in_(bindparam(pk, expanding=True)),        "currencies",       [], lambda s: s.currencies),
-        "plan_ids":         _FilterDef(lambda a, pk: _col("sub.plan_id").in_(bindparam(pk, expanding=True)),          "plan_ids",         ["subscription"],         lambda s: s.plan_ids),
-        "plan_intervals":   _FilterDef(lambda a, pk: _col("p.interval").in_(bindparam(pk, expanding=True)),           "plan_intervals",   ["subscription", "plan"], lambda s: s.plan_intervals),
-        "customer_country": _FilterDef(lambda a, pk: _col("c.country").in_(bindparam(pk, expanding=True)),            "customer_country", ["customer"],             lambda s: s.customer_country),
-        "customer_tags":    _FilterDef(lambda a, pk: _col("ct.tag").in_(bindparam(pk, expanding=True)),               "customer_tags",    ["customer_tag"],         lambda s: s.customer_tags),
-    }
-
-    # ------------------------------------------------------------------ #
-
-    def __init__(
-        self,
-        base_table: str,
-        alias: str = "m",
-        available_joins: set[str] | None = None,
-    ):
-        """
-        base_table:      table name, e.g. "metric_mrr_snapshot"
-        alias:           SQL alias for the base table, e.g. "s"
-        available_joins: restrict which joins may be added (None = all standard).
-                         Pass a subset when the base table lacks certain FK columns
-                         (e.g. metric_churn_event has no subscription_id).
-                         Segment filters that require an unavailable join are
-                         silently skipped; group_by dimensions raise ValueError.
-        """
-        self._a = alias
-        self._available = available_joins
-        self._stmt: Select = select().select_from(
-            table(base_table).alias(alias)
-        )
-        self._needed_joins: set[str] = set()
-        self._params: dict[str, Any] = {}
-
-    # --- Fluent setters ------------------------------------------------ #
-
-    def select(self, *exprs: ClauseElement) -> QueryBuilder:
-        """Add SELECT column/aggregate expressions."""
-        self._stmt = self._stmt.add_columns(*exprs)
-        return self
-
-    def where(self, condition: ClauseElement, **params) -> QueryBuilder:
-        """Add a WHERE condition. Pass bind-param values as kwargs."""
-        self._stmt = self._stmt.where(condition)
-        self._params.update(params)
-        return self
-
-    def group_by(self, *exprs: ClauseElement) -> QueryBuilder:
-        """Add fixed GROUP BY expressions (independent of SegmentFilter)."""
-        self._stmt = self._stmt.group_by(*exprs)
-        return self
-
-    def order_by(self, *exprs: ClauseElement) -> QueryBuilder:
-        self._stmt = self._stmt.order_by(*exprs)
-        return self
-
-    def apply_segment(self, segment: SegmentFilter | None) -> QueryBuilder:
-        """
-        Translate SegmentFilter into statement mutations:
-        - Each active filter field → .where(condition) + mark required joins
-        - Each group_by dimension  → .add_columns(label) + .group_by(col)
-                                     + mark required joins
-
-        Joins are not applied here; they are resolved and added in build()
-        to ensure correct dependency order regardless of call sequence.
-        """
-        if not segment:
-            return self
-
-        for field_name, fdef in self._FILTER_DEFS.items():
-            values = fdef.get_value(segment)
-            if not values:
-                continue
-            if self._available is not None and not set(fdef.requires_joins) <= self._available:
-                continue  # table lacks required FK — skip silently
-            self._stmt = self._stmt.where(fdef.condition_fn(self._a, fdef.param_key))
-            self._params[fdef.param_key] = values
-            self._needed_joins.update(fdef.requires_joins)
-
-        for dim in segment.group_by:
-            if dim not in self._DIMS:
-                raise ValueError(f"Unknown group_by dimension '{dim}'")
-            ddef = self._DIMS[dim]
-            if self._available is not None and not set(ddef.requires_joins) <= self._available:
-                raise ValueError(
-                    f"group_by='{dim}' requires joins {ddef.requires_joins!r} "
-                    f"not available on this table"
-                )
-            self._stmt = self._stmt.add_columns(ddef.select_fn(self._a))
-            self._stmt = self._stmt.group_by(ddef.group_by_fn(self._a))
-            self._needed_joins.update(ddef.requires_joins)
-
-        return self
-
-    def build(self) -> tuple[Select, dict[str, Any]]:
-        """
-        Resolve pending joins in dependency order and return the finished
-        Select statement together with the bind-params dict.
-
-        Usage:
-            stmt, params = builder.build()
-            result = await db.execute(stmt, params)
-        """
-        stmt = self._stmt
-        for jdef, tgt, on in self._resolve_joins():
-            stmt = stmt.join(tgt, on)
-        return stmt, self._params
-
-    def _resolve_joins(self) -> list[tuple[_JoinDef, Any, ClauseElement]]:
-        """Topological sort of needed joins; return (jdef, target, onclause) triples."""
-        result: list[tuple[_JoinDef, Any, ClauseElement]] = []
-        seen: set[str] = set()
-
-        def add(key: str) -> None:
-            if key in seen:
-                return
-            jdef = self._JOINS[key]
-            for dep in jdef.depends_on:
-                add(dep)
-            tgt, on = jdef.join_fn(self._a)
-            result.append((jdef, tgt, on))
-            seen.add(key)
-
-        for key in sorted(self._needed_joins):
-            add(key)
-        return result
-```
+See **[Semantic Models & Query Algebra](cubes.md)** for the full approach: model definitions, fragment algebra, compilation pipeline, and concrete models for all metric tables.
 
 ## Dependencies
 
@@ -998,7 +746,7 @@ class RetentionMetric(Metric):
         self.db = db
         self.mrr = deps["mrr"]   # injected MRR metric instance
 
-    async def query(self, params, segment=None):
+    async def query(self, params, spec=None):
         # Can await self.mrr.query(...) or query metric_mrr_movement directly
         ...
 
@@ -1006,32 +754,32 @@ class RetentionMetric(Metric):
 @register
 class QuickRatioMetric(Metric):
     name = "quick_ratio"
+    model = MRRMovementModel
     dependencies = ["mrr"]
 
     def _init(self, db, connector, deps):
         self.db = db
         self.mrr = deps["mrr"]
 
-    async def query(self, params, segment=None):
-        stmt, qparams = (
-            QueryBuilder("metric_mrr_movement", alias="m")
-            .select(
-                _col("m.movement_type").label("movement_type"),
-                func.sum(_col("m.amount_usd_cents")).label("total"),
-            )
-            .where(
-                _col("m.occurred_at").between(bindparam("start"), bindparam("end")),
-                start=params["start"], end=params["end"],
-            )
-            .group_by(_col("m.movement_type"))
-            .apply_segment(segment)
-            .build()
-        )
-        rows = (await self.db.execute(stmt, qparams)).all()
+    async def query(self, params, spec=None):
+        m = self.model  # MRRMovementModel
 
-        growth = sum(r.total for r in rows if r.movement_type in ("new", "expansion", "reactivation"))
-        loss   = abs(sum(r.total for r in rows if r.movement_type in ("churn", "contraction")))
-        return growth / loss if loss > 0 else None
+        q = (
+            m.measures.amount
+            + m.dimension("movement_type")
+            + m.filter("occurred_at", "between", (params["start"], params["end"]))
+        )
+
+        if spec:
+            q = q + m.apply_spec(spec)
+
+        stmt, bind = q.compile(m)
+        rows = (await self.db.execute(stmt, bind)).mappings().all()
+
+        by_type = {r["movement_type"]: r["amount_usd"] for r in rows}
+        growth = sum(by_type.get(t, 0) for t in ("new", "expansion", "reactivation"))
+        loss   = abs(sum(by_type.get(t, 0) for t in ("churn", "contraction")))
+        return growth / loss if loss else None
 ```
 
 Dependency graph for built-in metrics:

@@ -24,6 +24,7 @@ subscriptions/
 │   │   ├── database.md                 # PostgreSQL schema, deployment topologies
 │   │   ├── events.md                   # Internal event schema, Kafka topics
 │   │   ├── metrics.md                  # Metrics (dual-mode computation)
+│   │   ├── cubes.md                   # Semantic models & query algebra
 │   │   ├── connectors.md              # Webhook (Stripe) + database (Lago) connectors
 │   │   ├── api.md                      # FastAPI endpoints + CLI interface
 │   │   ├── deployment.md              # Docker Compose + Terraform IaC
@@ -74,6 +75,7 @@ Start with `docs/architecture/overview.md` for the full system design. Key files
 
 - **Connectors:** `connectors.md` — `WebhookConnector` (Stripe) vs `DatabaseConnector` (Lago/Kill Bill) patterns
 - **Metrics:** `metrics.md` — `Metric` base class, built-in metrics (MRR, Churn, Retention, LTV, Trials) with SQL
+- **Query Algebra:** `cubes.md` — Semantic models, `QueryFragment` composition, declarative SQL building
 - **Database:** `database.md` — Core schema (ER diagram), metric tables, deployment topologies
 - **API:** `api.md` — CLI commands, FastAPI endpoints, programmatic Python usage
 - **Research:** `docs/research/` — Market analysis, competitive matrix, product positioning
@@ -97,7 +99,7 @@ subscriptions/
 │   └── killbill.py          # Kill Bill database connector (P1)
 ├── metrics/
 │   ├── __init__.py          # Metric base class + registry
-│   ├── query.py             # QueryBuilder — shared segmented SQL builder
+│   ├── query.py             # SemanticModel, QueryFragment, compilation
 │   ├── mrr.py               # P0: MRR, ARR, net new MRR
 │   ├── churn.py             # P0: Logo, revenue, net revenue churn
 │   ├── retention.py         # P0: Cohorts, NRR, GRR
@@ -187,4 +189,4 @@ Copy `.env.example` to `.env` and configure:
 - **Dates:** TIMESTAMPTZ in PostgreSQL, `YYYY-MM-DD` in API, `datetime` in Python.
 - **Async:** all database access via SQLAlchemy `AsyncSession`/`AsyncEngine`. All metric queries, connector methods, and API endpoints are `async`.
 - **Metric transparency:** every metric must document its formula, SQL, assumptions, edge cases.
-- **QueryBuilder:** all segmented metric SQL uses the shared `QueryBuilder` (SQLAlchemy `Select`-based, no string concatenation).
+- **Query Algebra:** all segmented metric SQL is built through `SemanticModel` definitions and composable `QueryFragment` objects (SQLAlchemy `Select`-based, no string concatenation). See `docs/architecture/cubes.md`.

@@ -78,7 +78,7 @@ type = "lago"
 
 ```python
 import asyncio
-from subscriptions import MetricsEngine, SegmentFilter
+from subscriptions import MetricsEngine, QuerySpec
 
 # Ingestion mode (Stripe) — engine queries materialized metric_* tables
 engine = MetricsEngine(db=async_session)
@@ -93,9 +93,12 @@ mrr = await engine.query("mrr", {"query_type": "current"})
 churn = await engine.query("churn", {"start": date(2026, 1, 1), "end": date(2026, 3, 1), "type": "logo"})
 cohorts = await engine.query("retention", {"start": date(2025, 1, 1), "end": date(2026, 1, 1)})
 
-# With segmentation
-segment = SegmentFilter(plan_intervals=["yearly"], customer_country=["US"])
-enterprise_mrr = await engine.query("mrr", {"query_type": "current"}, segment=segment)
+# With dimensions and filters via QuerySpec
+spec = QuerySpec(
+    dimensions=["plan_interval"],
+    filters={"plan_interval": {"in": ["yearly"]}, "customer_country": "US"},
+)
+enterprise_mrr = await engine.query("mrr", {"query_type": "current"}, spec=spec)
 
 # Synchronous — no I/O
 print(engine.available_metrics())
@@ -108,7 +111,7 @@ FastAPI is a thin HTTP layer. Every endpoint delegates to `engine.query()`. No b
 
 ```python
 from fastapi import FastAPI, Depends, Query
-from subscriptions import MetricsEngine, SegmentFilter
+from subscriptions import MetricsEngine, QuerySpec
 from subscriptions.database import get_db
 
 app = FastAPI(title="Subscriptions API")
@@ -116,25 +119,18 @@ app = FastAPI(title="Subscriptions API")
 def get_engine() -> MetricsEngine:
     return MetricsEngine(get_db())
 
-def parse_segment(
-    source_ids: list[str] = Query(default=[]),
-    customer_ids: list[str] = Query(default=[]),
-    customer_tags: list[str] = Query(default=[]),
-    customer_country: list[str] = Query(default=[]),
-    plan_ids: list[str] = Query(default=[]),
-    plan_intervals: list[str] = Query(default=[]),
-    currencies: list[str] = Query(default=[]),
-    group_by: list[str] = Query(default=[]),
-) -> SegmentFilter | None:
-    seg = SegmentFilter(
-        source_ids=source_ids, customer_ids=customer_ids,
-        customer_tags=customer_tags, customer_country=customer_country,
-        plan_ids=plan_ids, plan_intervals=plan_intervals, currencies=currencies,
-        group_by=group_by,
-    )
-    # Return None if nothing set (metrics skip SQL overhead entirely)
-    return seg if any([source_ids, customer_ids, customer_tags, customer_country,
-                       plan_ids, plan_intervals, currencies, group_by]) else None
+def parse_spec(
+    dimensions: list[str] = Query(default=[]),
+    filter: list[str] = Query(default=[]),    # "country=US", "plan_interval=monthly"
+    granularity: str | None = None,
+) -> QuerySpec | None:
+    filters = {}
+    for f in filter:
+        key, _, value = f.partition("=")
+        filters[key] = value
+    if not dimensions and not filters and not granularity:
+        return None
+    return QuerySpec(dimensions=dimensions, filters=filters, granularity=granularity)
 
 @app.get("/api/metrics/mrr")
 async def get_mrr(
@@ -142,13 +138,13 @@ async def get_mrr(
     start: date | None = None,
     end: date | None = None,
     interval: str = "month",
-    segment: SegmentFilter | None = Depends(parse_segment),
+    spec: QuerySpec | None = Depends(parse_spec),
     engine: MetricsEngine = Depends(get_engine),
 ):
     if start and end:
         return await engine.query("mrr", {"query_type": "series", "start": start,
-                                          "end": end, "interval": interval}, segment)
-    return await engine.query("mrr", {"query_type": "current", "at": at}, segment)
+                                          "end": end, "interval": interval}, spec=spec)
+    return await engine.query("mrr", {"query_type": "current", "at": at}, spec=spec)
 ```
 
 ## Endpoints
