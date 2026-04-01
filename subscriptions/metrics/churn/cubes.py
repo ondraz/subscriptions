@@ -62,6 +62,7 @@ class ChurnEventCube(Cube):
     class Dimensions:
         source_id = Dim("ce.source_id")
         churn_type = Dim("ce.churn_type")
+        cancel_reason = Dim("ce.cancel_reason")
         customer_country = Dim("c.country", join="customer", label="customer_country")
 
     class TimeDimensions:

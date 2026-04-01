@@ -8,6 +8,7 @@ requires-python = ">=3.13"
 
 dependencies = [
     "sqlalchemy>=2.0,<3",
+    "stripe>=14.4.1",
 ]
 
 [project.optional-dependencies]

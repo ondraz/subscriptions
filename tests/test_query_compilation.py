@@ -92,6 +92,13 @@ class TestCubeIntrospection:
         assert "currency" in dims
         assert "source_id" in dims
         assert "plan_id" in dims
+        # New Stripe-sourced dimensions
+        assert "plan_name" in dims
+        assert "product_name" in dims
+        assert "billing_scheme" in dims
+        assert "usage_type" in dims
+        assert "collection_method" in dims
+        assert "cancel_at_period_end" in dims
 
     def test_mrr_snapshot_measures(self):
         measures = MRRSnapshotCube.available_measures()
@@ -111,6 +118,7 @@ class TestCubeIntrospection:
         dims = ChurnEventCube.available_dimensions()
         assert "churn_type" in dims
         assert "customer_country" in dims
+        assert "cancel_reason" in dims
         # ChurnEventCube has no subscription join
         assert "plan_id" not in dims
 
@@ -261,6 +269,61 @@ class TestMRRSnapshotCompilation:
         plan_pos = sql.index("JOIN plan")
         assert sub_pos < plan_pos
 
+    def test_product_join_chain(self):
+        """product depends on plan depends on subscription — all three joined in order."""
+        m = MRRSnapshotCube
+        q = m.measures.mrr + m.dimension("product_name")
+        stmt, params = q.compile(m)
+        sql = _sql(stmt)
+
+        assert "JOIN subscription" in sql
+        assert "JOIN plan" in sql
+        assert "JOIN product" in sql
+        # Correct dependency order
+        sub_pos = sql.index("JOIN subscription")
+        plan_pos = sql.index("JOIN plan")
+        prod_pos = sql.index("JOIN product")
+        assert sub_pos < plan_pos < prod_pos
+        assert "prod.name" in sql
+
+    def test_plan_name_dimension(self):
+        m = MRRSnapshotCube
+        q = m.measures.mrr + m.dimension("plan_name")
+        stmt, params = q.compile(m)
+        sql = _normalize(_sql(stmt))
+
+        assert "p.name" in sql
+        assert "JOIN plan" in sql
+        assert "GROUP BY" in sql
+
+    def test_billing_scheme_dimension(self):
+        m = MRRSnapshotCube
+        q = m.measures.mrr + m.dimension("billing_scheme")
+        stmt, params = q.compile(m)
+        sql = _normalize(_sql(stmt))
+
+        assert "p.billing_scheme" in sql
+        assert "JOIN plan" in sql
+
+    def test_collection_method_dimension(self):
+        m = MRRSnapshotCube
+        q = m.measures.mrr + m.dimension("collection_method")
+        stmt, params = q.compile(m)
+        sql = _normalize(_sql(stmt))
+
+        assert "sub.collection_method" in sql
+        assert "JOIN subscription" in sql
+        # collection_method is on subscription, no plan join needed
+        assert "JOIN plan" not in sql
+
+    def test_cancel_at_period_end_dimension(self):
+        m = MRRSnapshotCube
+        q = m.measures.mrr + m.dimension("cancel_at_period_end")
+        stmt, params = q.compile(m)
+        sql = _normalize(_sql(stmt))
+
+        assert "sub.cancel_at_period_end" in sql
+
     def test_between_filter(self):
         m = MRRSnapshotCube
         q = m.measures.mrr + m.filter("snapshot_at", "between", ("2025-01-01", "2025-12-31"))
@@ -367,6 +430,17 @@ class TestChurnEventCompilation:
         assert "JOIN customer" in sql
         assert "c.country" in sql
         assert "GROUP BY" in sql
+
+    def test_churn_cancel_reason_dimension(self):
+        """cancel_reason is on the churn event table — no join needed."""
+        ce = ChurnEventCube
+        q = ce.measures.count + ce.dimension("cancel_reason")
+        stmt, params = q.compile(ce)
+        sql = _normalize(_sql(stmt))
+
+        assert "ce.cancel_reason" in sql
+        assert "GROUP BY" in sql
+        assert "JOIN" not in sql
 
 
 # ── Retention — SQL compilation ──────────────────────────────────────────

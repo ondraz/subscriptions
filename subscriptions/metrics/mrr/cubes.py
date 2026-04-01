@@ -34,6 +34,12 @@ class MRRSnapshotCube(Cube):
             on="p.id = sub.plan_id",
             depends_on=["subscription"],
         )
+        product = Join(
+            "product",
+            alias="prod",
+            on="prod.id = p.product_id",
+            depends_on=["plan"],
+        )
         customer = Join(
             "customer",
             alias="c",
@@ -46,11 +52,26 @@ class MRRSnapshotCube(Cube):
         count = CountDistinct("s.subscription_id", label="subscription_count")
 
     class Dimensions:
+        # Source
         source_id = Dim("s.source_id")
         currency = Dim("s.currency")
+        # Plan (via subscription → plan)
         plan_id = Dim("sub.plan_id", join="subscription")
+        plan_name = Dim("p.name", join="plan", label="plan_name")
         plan_interval = Dim("p.interval", join="plan", label="plan_interval")
+        billing_scheme = Dim("p.billing_scheme", join="plan", label="billing_scheme")
+        usage_type = Dim("p.usage_type", join="plan", label="usage_type")
+        # Product (via subscription → plan → product)
+        product_name = Dim("prod.name", join="product", label="product_name")
+        # Customer
         customer_country = Dim("c.country", join="customer", label="customer_country")
+        # Subscription attributes
+        collection_method = Dim(
+            "sub.collection_method", join="subscription", label="collection_method"
+        )
+        cancel_at_period_end = Dim(
+            "sub.cancel_at_period_end", join="subscription", label="cancel_at_period_end"
+        )
 
     class TimeDimensions:
         snapshot_at = TimeDim("s.snapshot_at")
@@ -74,6 +95,12 @@ class MRRMovementCube(Cube):
             on="p.id = sub.plan_id",
             depends_on=["subscription"],
         )
+        product = Join(
+            "product",
+            alias="prod",
+            on="prod.id = p.product_id",
+            depends_on=["plan"],
+        )
         customer = Join(
             "customer",
             alias="c",
@@ -86,12 +113,24 @@ class MRRMovementCube(Cube):
         count = CountDistinct("m.event_id", label="event_count")
 
     class Dimensions:
+        # Source
         source_id = Dim("m.source_id")
         currency = Dim("m.currency")
         movement_type = Dim("m.movement_type")
+        # Plan
         plan_id = Dim("sub.plan_id", join="subscription")
+        plan_name = Dim("p.name", join="plan", label="plan_name")
         plan_interval = Dim("p.interval", join="plan", label="plan_interval")
+        billing_scheme = Dim("p.billing_scheme", join="plan", label="billing_scheme")
+        usage_type = Dim("p.usage_type", join="plan", label="usage_type")
+        # Product
+        product_name = Dim("prod.name", join="product", label="product_name")
+        # Customer
         customer_country = Dim("c.country", join="customer", label="customer_country")
+        # Subscription attributes
+        collection_method = Dim(
+            "sub.collection_method", join="subscription", label="collection_method"
+        )
 
     class TimeDimensions:
         occurred_at = TimeDim("m.occurred_at")

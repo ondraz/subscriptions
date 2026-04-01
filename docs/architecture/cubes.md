@@ -40,19 +40,14 @@ class MRRSnapshotCube(Cube):
     __alias__ = "s"
 
     class Joins:
-        subscription = Join(
-            "subscription AS sub",
-            on="sub.source_id = s.source_id AND sub.external_id = s.subscription_id",
-        )
-        plan = Join(
-            "plan AS p",
-            on="p.id = sub.plan_id",
-            depends_on=["subscription"],
-        )
-        customer = Join(
-            "customer AS c",
-            on="c.source_id = s.source_id AND c.external_id = s.customer_id",
-        )
+        subscription = Join("subscription", alias="sub",
+            on="sub.source_id = s.source_id AND sub.external_id = s.subscription_id")
+        plan = Join("plan", alias="p",
+            on="p.id = sub.plan_id", depends_on=["subscription"])
+        product = Join("product", alias="prod",
+            on="prod.id = p.product_id", depends_on=["plan"])
+        customer = Join("customer", alias="c",
+            on="c.source_id = s.source_id AND c.external_id = s.customer_id")
 
     class Measures:
         mrr = Sum("s.mrr_base_cents")
@@ -63,8 +58,14 @@ class MRRSnapshotCube(Cube):
         source_id = Dim("s.source_id")
         currency = Dim("s.currency")
         plan_id = Dim("sub.plan_id", join="subscription")
+        plan_name = Dim("p.name", join="plan")
         plan_interval = Dim("p.interval", join="plan")
+        billing_scheme = Dim("p.billing_scheme", join="plan")   # per_unit | tiered
+        usage_type = Dim("p.usage_type", join="plan")           # licensed | metered
+        product_name = Dim("prod.name", join="product")         # via plan → product
         customer_country = Dim("c.country", join="customer")
+        collection_method = Dim("sub.collection_method", join="subscription")
+        cancel_at_period_end = Dim("sub.cancel_at_period_end", join="subscription")
 
     class TimeDimensions:
         snapshot_at = TimeDim("s.snapshot_at")
@@ -72,13 +73,15 @@ class MRRSnapshotCube(Cube):
 
 Key properties:
 
-- **Join dependencies** — `plan` depends on `subscription`. Requesting `plan_interval` automatically pulls in both joins in the correct order.
+- **Join dependencies** — `plan` depends on `subscription`, `product` depends on `plan`. Requesting `product_name` automatically pulls in all three joins in the correct order.
 - **Lazy joins** — only dimensions/filters that are actually used trigger their joins. A query with no plan dimensions never joins the `plan` table.
 - **Introspection** — the model can list its available dimensions and measures at runtime, enabling API validation and documentation generation.
 
 ```python
 MRRSnapshotCube.available_dimensions()
-# ['source_id', 'currency', 'plan_id', 'plan_interval', 'customer_country']
+# ['billing_scheme', 'cancel_at_period_end', 'collection_method', 'currency',
+#  'customer_country', 'plan_id', 'plan_interval', 'plan_name',
+#  'product_name', 'source_id', 'usage_type']
 
 MRRSnapshotCube.available_measures()
 # ['mrr', 'mrr_original', 'count']
@@ -229,6 +232,8 @@ def compile(self, model: type[Cube]) -> tuple[Select, dict[str, Any]]:
 
 These are the cubes for the project's [metric tables](database.md#metric-tables). Each maps a fact table to its available joins, measures, and dimensions.
 
+Dimensions sourced from Stripe API objects: Customer (`address.country`), Subscription (`status`, `collection_method`, `cancel_at_period_end`, `cancellation_details`), Price/Plan (`interval`, `interval_count`, `billing_scheme`, `usage_type`), Product (`name`). See [Stripe API mapping](#stripe-api-mapping) below for the full field comparison.
+
 ### MRR Snapshot Cube
 
 ```python
@@ -238,19 +243,14 @@ class MRRSnapshotCube(Cube):
     __alias__ = "s"
 
     class Joins:
-        subscription = Join(
-            "subscription AS sub",
-            on="sub.source_id = s.source_id AND sub.external_id = s.subscription_id",
-        )
-        plan = Join(
-            "plan AS p",
-            on="p.id = sub.plan_id",
-            depends_on=["subscription"],
-        )
-        customer = Join(
-            "customer AS c",
-            on="c.source_id = s.source_id AND c.external_id = s.customer_id",
-        )
+        subscription = Join("subscription", alias="sub",
+            on="sub.source_id = s.source_id AND sub.external_id = s.subscription_id")
+        plan = Join("plan", alias="p",
+            on="p.id = sub.plan_id", depends_on=["subscription"])
+        product = Join("product", alias="prod",
+            on="prod.id = p.product_id", depends_on=["plan"])
+        customer = Join("customer", alias="c",
+            on="c.source_id = s.source_id AND c.external_id = s.customer_id")
 
     class Measures:
         mrr = Sum("s.mrr_base_cents", label="mrr")
@@ -260,9 +260,19 @@ class MRRSnapshotCube(Cube):
     class Dimensions:
         source_id = Dim("s.source_id")
         currency = Dim("s.currency")
+        # Plan (subscription → plan)
         plan_id = Dim("sub.plan_id", join="subscription")
-        plan_interval = Dim("p.interval", join="plan")
-        customer_country = Dim("c.country", join="customer")
+        plan_name = Dim("p.name", join="plan", label="plan_name")
+        plan_interval = Dim("p.interval", join="plan", label="plan_interval")
+        billing_scheme = Dim("p.billing_scheme", join="plan")       # per_unit | tiered
+        usage_type = Dim("p.usage_type", join="plan")               # licensed | metered
+        # Product (subscription → plan → product)
+        product_name = Dim("prod.name", join="product", label="product_name")
+        # Customer
+        customer_country = Dim("c.country", join="customer", label="customer_country")
+        # Subscription attributes
+        collection_method = Dim("sub.collection_method", join="subscription")
+        cancel_at_period_end = Dim("sub.cancel_at_period_end", join="subscription")
 
     class TimeDimensions:
         snapshot_at = TimeDim("s.snapshot_at")
@@ -277,19 +287,14 @@ class MRRMovementCube(Cube):
     __alias__ = "m"
 
     class Joins:
-        subscription = Join(
-            "subscription AS sub",
-            on="sub.source_id = m.source_id AND sub.external_id = m.subscription_id",
-        )
-        plan = Join(
-            "plan AS p",
-            on="p.id = sub.plan_id",
-            depends_on=["subscription"],
-        )
-        customer = Join(
-            "customer AS c",
-            on="c.source_id = m.source_id AND c.external_id = m.customer_id",
-        )
+        subscription = Join("subscription", alias="sub",
+            on="sub.source_id = m.source_id AND sub.external_id = m.subscription_id")
+        plan = Join("plan", alias="p",
+            on="p.id = sub.plan_id", depends_on=["subscription"])
+        product = Join("product", alias="prod",
+            on="prod.id = p.product_id", depends_on=["plan"])
+        customer = Join("customer", alias="c",
+            on="c.source_id = m.source_id AND c.external_id = m.customer_id")
 
     class Measures:
         amount = Sum("m.amount_base_cents", label="amount_base")
@@ -301,8 +306,13 @@ class MRRMovementCube(Cube):
         currency = Dim("m.currency")
         movement_type = Dim("m.movement_type")
         plan_id = Dim("sub.plan_id", join="subscription")
-        plan_interval = Dim("p.interval", join="plan")
-        customer_country = Dim("c.country", join="customer")
+        plan_name = Dim("p.name", join="plan", label="plan_name")
+        plan_interval = Dim("p.interval", join="plan", label="plan_interval")
+        billing_scheme = Dim("p.billing_scheme", join="plan")
+        usage_type = Dim("p.usage_type", join="plan")
+        product_name = Dim("prod.name", join="product", label="product_name")
+        customer_country = Dim("c.country", join="customer", label="customer_country")
+        collection_method = Dim("sub.collection_method", join="subscription")
 
     class TimeDimensions:
         occurred_at = TimeDim("m.occurred_at")
@@ -317,10 +327,8 @@ class ChurnEventCube(Cube):
     __alias__ = "ce"
 
     class Joins:
-        customer = Join(
-            "customer AS c",
-            on="c.source_id = ce.source_id AND c.external_id = ce.customer_id",
-        )
+        customer = Join("customer", alias="c",
+            on="c.source_id = ce.source_id AND c.external_id = ce.customer_id")
 
     class Measures:
         count = Count("*", label="churn_count")
@@ -329,6 +337,7 @@ class ChurnEventCube(Cube):
     class Dimensions:
         source_id = Dim("ce.source_id")
         churn_type = Dim("ce.churn_type")
+        cancel_reason = Dim("ce.cancel_reason")               # from cancellation_details.reason
         customer_country = Dim("c.country", join="customer")
 
     class TimeDimensions:
@@ -344,14 +353,10 @@ class RetentionCohortCube(Cube):
     __alias__ = "rc"
 
     class Joins:
-        activity = Join(
-            "metric_retention_activity AS ra",
-            on="ra.customer_id = rc.customer_id AND ra.source_id = rc.source_id",
-        )
-        customer = Join(
-            "customer AS c",
-            on="c.source_id = rc.source_id AND c.external_id = rc.customer_id",
-        )
+        activity = Join("metric_retention_activity", alias="ra",
+            on="ra.customer_id = rc.customer_id AND ra.source_id = rc.source_id")
+        customer = Join("customer", alias="c",
+            on="c.source_id = rc.source_id AND c.external_id = rc.customer_id")
 
     class Measures:
         cohort_size = CountDistinct("rc.customer_id", label="cohort_size")
@@ -366,6 +371,90 @@ class RetentionCohortCube(Cube):
     class TimeDimensions:
         cohort_month_time = TimeDim("rc.cohort_month")
 ```
+
+## Stripe API Mapping
+
+The table below maps Stripe API fields to our schema columns and cube dimensions. Fields marked with **dim** are exposed as queryable dimensions in the cubes above.
+
+### Customer → `customer` table
+
+| Stripe field | Our column | Cube dimension | Notes |
+|---|---|---|---|
+| `id` | `external_id` | — | Stripe customer ID |
+| `name` | `name` | — | |
+| `email` | `email` | — | |
+| `address.country` | `country` | **`customer_country`** | ISO 3166-1 alpha-2 |
+| `currency` | `currency` | **`currency`** | Default billing currency |
+| `created` | `created_at` | — | Cohort assignment |
+| `metadata` | `metadata` | — | Custom business dimensions (JSONB) |
+| `delinquent` | — | — | Could add for payment health segmentation |
+| `address.state/city` | — | — | Sub-national geo; use metadata if needed |
+
+### Product → `product` table (new)
+
+| Stripe field | Our column | Cube dimension | Notes |
+|---|---|---|---|
+| `id` | `external_id` | — | Stripe product ID |
+| `name` | `name` | **`product_name`** | Product-level MRR/churn analysis |
+| `active` | `active` | — | |
+| `metadata` | `metadata` | — | Product line, category |
+
+### Price/Plan → `plan` table
+
+| Stripe field | Our column | Cube dimension | Notes |
+|---|---|---|---|
+| `id` | `external_id` | **`plan_id`** | Stripe price/plan ID |
+| `product` | `product_id` | (via product join) | FK to product table |
+| `nickname` / `product.name` | `name` | **`plan_name`** | Human-readable plan name |
+| `recurring.interval` | `interval` | **`plan_interval`** | month, year, week, day |
+| `recurring.interval_count` | `interval_count` | — | 1=monthly, 3=quarterly, 12=annual |
+| `unit_amount` | `amount_cents` | — | Per-unit price |
+| `currency` | `currency` | — | |
+| `billing_scheme` | `billing_scheme` | **`billing_scheme`** | per_unit, tiered |
+| `recurring.usage_type` | `usage_type` | **`usage_type`** | licensed, metered |
+| `type` | — | — | one_time vs recurring; filter at ingest |
+| `trial_period_days` | `trial_period_days` | — | |
+| `tiers` | — | — | Tiered pricing detail; store in metadata |
+| `metadata` | `metadata` | — | Custom plan attributes |
+
+### Subscription → `subscription` table
+
+| Stripe field | Our column | Cube dimension | Notes |
+|---|---|---|---|
+| `id` | `external_id` | — | Stripe subscription ID |
+| `status` | `status` | — | active, trialing, past_due, canceled, etc. |
+| `items[].price × quantity` | `mrr_cents` / `mrr_base_cents` | (measure) | Computed at ingest time |
+| `items[].quantity` | `quantity` | — | Seat/unit count |
+| `currency` | `currency` | — | |
+| `collection_method` | `collection_method` | **`collection_method`** | charge_automatically, send_invoice |
+| `cancel_at_period_end` | `cancel_at_period_end` | **`cancel_at_period_end`** | Churn early warning |
+| `cancellation_details.reason` | `cancel_reason` | — | customer, payment_failure, etc. |
+| `cancellation_details.feedback` | `cancel_feedback` | — | too_expensive, missing_features, etc. |
+| `start_date` | `started_at` | — | |
+| `trial_start` / `trial_end` | `trial_start` / `trial_end` | — | |
+| `canceled_at` | `canceled_at` | — | |
+| `ended_at` | `ended_at` | — | |
+| `current_period_start/end` | `current_period_start/end` | — | |
+| `metadata` | — | — | Store in event payload |
+
+### Churn Events → `metric_churn_event` table
+
+| Stripe field | Our column | Cube dimension | Notes |
+|---|---|---|---|
+| `cancellation_details.reason` | `cancel_reason` | **`cancel_reason`** | Denormalized from subscription for direct churn analysis |
+
+### Not captured (available via metadata or future extension)
+
+| Stripe field | Analytics value | Priority |
+|---|---|---|
+| `charge.payment_method_details.card.brand` | Payment success by card brand | P1 |
+| `charge.payment_method_details.card.country` | Card issuing country vs billing country | P1 |
+| `charge.outcome.risk_level` | Fraud/risk segmentation | P2 |
+| `invoice.billing_reason` | Distinguish cycle vs proration vs manual | P1 |
+| `invoice.amount_paid` / `amount_remaining` | AR aging, collection rate | P1 |
+| `invoice.total_discount_amounts` | Discount impact on revenue | P2 |
+| `customer.delinquent` | Payment health flag | P2 |
+| `price.tiers` / `tiers_mode` | Tiered pricing analysis | P2 |
 
 ## Usage in Metrics
 

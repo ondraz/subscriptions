@@ -31,9 +31,11 @@ import os
 import random
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import stripe
+
+METER_EVENT_NAME = "analytical_query"
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -76,6 +78,22 @@ def create_plans() -> dict:
     """Create products and prices, return mapping."""
     result = {}
 
+    # ── Billing Meter (shared across all metered prices) ───────────────
+    # Reuse existing active meter if one exists for our event name
+    meter = None
+    for m in stripe.billing.Meter.list(limit=100).data:
+        if m.event_name == METER_EVENT_NAME and m.status == "active":
+            meter = m
+            break
+    if meter is None:
+        meter = stripe.billing.Meter.create(
+            display_name="Analytical Queries",
+            event_name=METER_EVENT_NAME,
+            default_aggregation={"formula": "sum"},
+        )
+    result["_meter"] = meter
+    print(f"  Meter:        {meter.id} (event={METER_EVENT_NAME})")
+
     # ── Starter: pure PAYG ─────────────────────────────────────────────
     starter_prod = stripe.Product.create(
         name="Starter",
@@ -85,7 +103,7 @@ def create_plans() -> dict:
         product=starter_prod.id,
         currency="usd",
         unit_amount=2,  # $0.02
-        recurring={"interval": "month", "usage_type": "metered"},
+        recurring={"interval": "month", "meter": meter.id, "usage_type": "metered"},
         nickname="Starter — $0.02/query",
     )
     result["Starter"] = {
@@ -116,7 +134,7 @@ def create_plans() -> dict:
     pro_metered_monthly = stripe.Price.create(
         product=pro_prod.id,
         currency="usd",
-        recurring={"interval": "month", "usage_type": "metered"},
+        recurring={"interval": "month", "meter": meter.id, "usage_type": "metered"},
         billing_scheme="tiered",
         tiers_mode="graduated",
         tiers=[
@@ -128,7 +146,7 @@ def create_plans() -> dict:
     pro_metered_annual = stripe.Price.create(
         product=pro_prod.id,
         currency="usd",
-        recurring={"interval": "year", "usage_type": "metered"},
+        recurring={"interval": "year", "meter": meter.id, "usage_type": "metered"},
         billing_scheme="tiered",
         tiers_mode="graduated",
         tiers=[
@@ -191,22 +209,16 @@ def subscription_items(plans: dict, plan: str, billing: str) -> list[dict]:
     raise ValueError(f"Unknown plan: {plan}")
 
 
-def find_metered_item(sub) -> str | None:
-    """Find the metered subscription item ID."""
-    for item in sub["items"]["data"]:
-        if item.price.recurring.usage_type == "metered":
-            return item.id
-    return None
-
-
-def report_usage(item_id: str, quantity: int, timestamp: int) -> None:
-    """Report usage for a metered subscription item."""
+def report_usage(customer_id: str, quantity: int, timestamp: int) -> None:
+    """Report usage via billing meter event."""
     if quantity > 0:
-        stripe.SubscriptionItem.create_usage_record(
-            item_id,
-            quantity=quantity,
+        stripe.billing.MeterEvent.create(
+            event_name=METER_EVENT_NAME,
+            payload={
+                "value": str(quantity),
+                "stripe_customer_id": customer_id,
+            },
             timestamp=timestamp,
-            action="increment",
         )
 
 
@@ -232,27 +244,14 @@ def create_customer(
         metadata={"seed": "true", "archetype": name},
     )
 
-    if failing_card:
-        pm = stripe.PaymentMethod.create(
-            type="card",
-            card={
-                "number": "4000000000000002",
-                "exp_month": 12,
-                "exp_year": 2034,
-                "cvc": "123",
-            },
-        )
+    if not failing_card:
+        pm = stripe.PaymentMethod.create(type="card", card={"token": "tok_visa"})
         stripe.PaymentMethod.attach(pm.id, customer=customer.id)
         stripe.Customer.modify(
             customer.id,
             invoice_settings={"default_payment_method": pm.id},
         )
-    else:
-        stripe.Customer.modify(
-            customer.id,
-            payment_method="pm_card_visa",
-            invoice_settings={"default_payment_method": "pm_card_visa"},
-        )
+    # failing_card customers get no payment method — invoices will fail to auto-pay
 
     return customer
 
@@ -262,9 +261,12 @@ def create_customer(
 # ---------------------------------------------------------------------------
 
 
+MAX_CUSTOMERS_PER_CLOCK = 3
+
+
 def seed(num_customers: int, num_months: int) -> str:
-    """Create seed data. Returns the test clock ID for cleanup."""
-    start_date = datetime.utcnow().replace(day=1) - timedelta(days=num_months * 31)
+    """Create seed data. Returns comma-separated test clock IDs for cleanup."""
+    start_date = datetime.now(UTC).replace(day=1) - timedelta(days=num_months * 31)
     start_date = start_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     start_ts = int(start_date.timestamp())
 
@@ -279,22 +281,25 @@ def seed(num_customers: int, num_months: int) -> str:
     print("Creating plans...")
     plans = create_plans()
 
-    # 2. Create test clock
-    print("\nCreating test clock...")
-    clock = stripe.test_helpers.TestClock.create(
-        frozen_time=start_ts,
-        name=f"Seed {start_date.date()} → {datetime.utcnow().date()}",
-    )
-    print(f"  Clock: {clock.id} (frozen at {start_date.date()})")
-
-    # 3. Create customers and subscriptions
+    # 2. Create customers grouped into test clocks (max 3 per clock)
     archetypes = (ARCHETYPES * ((num_customers // len(ARCHETYPES)) + 1))[:num_customers]
+    clocks = []
     entries = []
 
     print(f"\nCreating {num_customers} customers and subscriptions...")
     for i, (name, plan, billing, action, base_usage) in enumerate(archetypes):
+        # Create a new clock when needed
+        if i % MAX_CUSTOMERS_PER_CLOCK == 0:
+            batch = i // MAX_CUSTOMERS_PER_CLOCK + 1
+            clock = stripe.test_helpers.TestClock.create(
+                frozen_time=start_ts,
+                name=f"Seed batch {batch} — {start_date.date()}",
+            )
+            clocks.append(clock)
+            print(f"  Clock {batch}: {clock.id}")
+
         failing = action == "fail_payment"
-        customer = create_customer(f"{name} #{i + 1}", i, clock.id, failing_card=failing)
+        customer = create_customer(f"{name} #{i + 1}", i, clocks[-1].id, failing_card=failing)
 
         items = subscription_items(plans, plan, billing)
 
@@ -316,15 +321,15 @@ def seed(num_customers: int, num_months: int) -> str:
                 "plan": plan,
                 "billing": billing,
                 "base_usage": base_usage,
-                "metered_item": find_metered_item(sub),
+                "active": True,
             }
         )
 
         plan_label = "Trial (→Starter)" if plan == "trial" else f"{plan} ({billing})"
         print(f"  [{action:14s}] {name} #{i + 1} → {plan_label}")
 
-    # 4. Advance through months
-    print(f"\nAdvancing time through {num_months} months...")
+    # 3. Advance through months
+    print(f"\nAdvancing time through {num_months} months ({len(clocks)} clocks)...")
     current = start_date
 
     for month in range(num_months):
@@ -333,7 +338,7 @@ def seed(num_customers: int, num_months: int) -> str:
             for entry in entries:
                 if entry["action"] == "trial_expire":
                     stripe.Subscription.cancel(entry["subscription"].id)
-                    entry["metered_item"] = None
+                    entry["active"] = False
                     print(f"  → Cancelled trial for {entry['customer'].name}")
 
         # ── Month 2 actions: churn, upgrade, downgrade, trial activation ──
@@ -360,7 +365,6 @@ def seed(num_customers: int, num_months: int) -> str:
                         proration_behavior="create_prorations",
                     )
                     entry["subscription"] = sub
-                    entry["metered_item"] = find_metered_item(sub)
                     entry["plan"] = "Professional"
                     entry["base_usage"] = 12000
                     print(f"  → Upgraded {cust.name} to Professional")
@@ -376,7 +380,6 @@ def seed(num_customers: int, num_months: int) -> str:
                         proration_behavior="create_prorations",
                     )
                     entry["subscription"] = sub
-                    entry["metered_item"] = find_metered_item(sub)
                     entry["plan"] = "Starter"
                     print(f"  → Downgraded {cust.name} to Starter")
 
@@ -385,39 +388,61 @@ def seed(num_customers: int, num_months: int) -> str:
                     entry["base_usage"] = 1500
                     print(f"  → Trial converted for {cust.name}, now active Starter")
 
-        # ── Report usage for metered subscriptions ──
-        mid_month_ts = int((current + timedelta(days=15)).timestamp())
-        for entry in entries:
-            if entry["metered_item"] and entry["base_usage"] > 0:
-                usage = random_usage(entry["base_usage"])
-                report_usage(entry["metered_item"], usage, mid_month_ts)
-
-        # ── Advance clock ──
+        # ── Advance all clocks ──
+        prev = current
         current += timedelta(days=32)
         current = current.replace(day=1)
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         if current > now:
             current = now
 
         target_ts = int(current.timestamp())
         print(f"  Advancing to {current.date()}...")
-        stripe.test_helpers.TestClock.advance(clock.id, frozen_time=target_ts)
-        wait_for_clock(clock.id)
+        for c in clocks:
+            stripe.test_helpers.TestClock.advance(c.id, frozen_time=target_ts)
+        for c in clocks:
+            wait_for_clock(c.id)
 
+        # ── Report usage via meter events (timestamp in the month just passed) ──
+        mid_month_ts = int((prev + timedelta(days=15)).timestamp())
+        for entry in entries:
+            if entry["active"] and entry["base_usage"] > 0:
+                usage = random_usage(entry["base_usage"])
+                report_usage(entry["customer"].id, usage, mid_month_ts)
+
+    clock_ids = [c.id for c in clocks]
     print(f"\n{'=' * 60}")
     print("Seed complete!")
-    print(f"  Clock ID: {clock.id}")
-    print(f"  Cleanup:  python stripe_seed.py --cleanup {clock.id}")
+    print(f"  Clocks: {', '.join(clock_ids)}")
+    print("  Cleanup:  python stripe_seed.py --cleanup")
     print(f"{'=' * 60}\n")
 
-    return clock.id
+    return ",".join(clock_ids)
 
 
-def cleanup(clock_id: str) -> None:
-    """Delete a test clock and all its resources."""
-    print(f"Deleting test clock {clock_id} and all associated resources...")
-    stripe.test_helpers.TestClock.delete(clock_id)
-    print("Done.")
+def cleanup(clock_id: str | None = None) -> None:
+    """Delete test clock(s) and all their resources.
+
+    If *clock_id* is given, delete just that clock. Otherwise delete all
+    clocks whose name starts with "Seed".
+    """
+    if clock_id:
+        ids = [cid.strip() for cid in clock_id.split(",")]
+    else:
+        ids = [
+            c.id
+            for c in stripe.test_helpers.TestClock.list(limit=100).data
+            if c.name and c.name.startswith("Seed")
+        ]
+
+    if not ids:
+        print("No seed clocks found.")
+        return
+
+    for cid in ids:
+        print(f"Deleting test clock {cid}...")
+        stripe.test_helpers.TestClock.delete(cid)
+    print(f"Done — deleted {len(ids)} clock(s).")
 
 
 def main() -> None:
@@ -426,7 +451,14 @@ def main() -> None:
         "--customers", type=int, default=15, help="Number of customers (default: 15)"
     )
     parser.add_argument("--months", type=int, default=6, help="Months of history (default: 6)")
-    parser.add_argument("--cleanup", type=str, metavar="CLOCK_ID", help="Delete a test clock")
+    parser.add_argument(
+        "--cleanup",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="CLOCK_ID",
+        help="Delete seed clocks (specific ID, or all if omitted)",
+    )
     args = parser.parse_args()
 
     api_key = os.environ.get("STRIPE_API_KEY")
@@ -440,8 +472,8 @@ def main() -> None:
 
     stripe.api_key = api_key
 
-    if args.cleanup:
-        cleanup(args.cleanup)
+    if args.cleanup is not None:
+        cleanup(args.cleanup or None)
     else:
         seed(args.customers, args.months)
 

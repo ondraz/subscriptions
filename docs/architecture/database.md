@@ -31,6 +31,7 @@ This separation means adding a new metric never touches core schema.
 ```mermaid
 erDiagram
     connector_source ||--o{ customer : syncs
+    connector_source ||--o{ product : syncs
     connector_source ||--o{ plan : syncs
     connector_source ||--o{ subscription : syncs
     connector_source ||--o{ invoice : syncs
@@ -41,6 +42,7 @@ erDiagram
     customer ||--o{ invoice : receives
     customer ||--o{ payment : makes
 
+    product ||--o{ plan : has
     plan ||--o{ subscription : defines
     plan ||--o{ plan_charge : contains
 
@@ -76,7 +78,20 @@ erDiagram
         text external_id "ID in billing system"
         text name
         text email
+        text country "ISO 3166-1 alpha-2"
         text currency "ISO 4217"
+        jsonb metadata
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    product {
+        uuid id PK
+        uuid source_id FK
+        text external_id "Stripe product ID"
+        text name
+        text description
+        boolean active
         jsonb metadata
         timestamptz created_at
         timestamptz updated_at
@@ -85,11 +100,15 @@ erDiagram
     plan {
         uuid id PK
         uuid source_id FK
-        text external_id
+        text external_id "Stripe price/plan ID"
+        uuid product_id FK
         text name
-        text interval "month | year | week | quarter"
+        text interval "month | year | week | day"
+        int interval_count "1 = monthly, 3 = quarterly, etc."
         bigint amount_cents
         text currency
+        text billing_scheme "per_unit | tiered"
+        text usage_type "licensed | metered"
         int trial_period_days
         jsonb metadata
         boolean active
@@ -126,6 +145,10 @@ erDiagram
         bigint mrr_base_cents "MRR in base currency (at rate on started_at)"
         text currency "ISO 4217"
         int quantity
+        text collection_method "charge_automatically | send_invoice"
+        boolean cancel_at_period_end "pending cancellation flag"
+        text cancel_reason "cancellation_details.reason from Stripe"
+        text cancel_feedback "cancellation_details.feedback from Stripe"
         timestamptz started_at
         timestamptz trial_start
         timestamptz trial_end
