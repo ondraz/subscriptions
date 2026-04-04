@@ -569,12 +569,12 @@ class StripeConnector(WebhookConnector):
                         "quantity": sum((it.get("quantity", 1) or 1) for it in items_data)
                         if items_data
                         else 1,
-                        "currency": sub.currency,
-                        "started_at": _ts(sub.start_date),
-                        "trial_start": _ts(sub.trial_start),
-                        "trial_end": _ts(sub.trial_end),
-                        "current_period_start": _ts(sub.current_period_start),  # type: ignore[attr-defined]
-                        "current_period_end": _ts(sub.current_period_end),  # type: ignore[attr-defined]
+                        "currency": sub_dict.get("currency"),
+                        "started_at": _ts(sub_dict.get("start_date")),
+                        "trial_start": _ts(sub_dict.get("trial_start")),
+                        "trial_end": _ts(sub_dict.get("trial_end")),
+                        "current_period_start": _ts(sub_dict.get("current_period_start")),
+                        "current_period_end": _ts(sub_dict.get("current_period_end")),
                     },
                 )
                 if sub.status == "active":
