@@ -64,15 +64,20 @@ check-e2e:
 COMPOSE_DEV := docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.dev.yml
 
 dev:
+	@test -n "$(STRIPE_API_KEY)" || (echo "Error: STRIPE_API_KEY must be set" && exit 1)
 	POSTGRES_PASSWORD=test $(COMPOSE_DEV) up -d
 	@echo ""
 	@echo "Infrastructure running: PostgreSQL :5432, Redpanda :9092"
+	@echo "Starting stripe listen (PID written to /tmp/stripe-listen-dev.pid)..."
+	@stripe listen --forward-to http://localhost:8000/api/webhooks/stripe --latest > /tmp/stripe-listen-dev.log 2>&1 & echo $$! > /tmp/stripe-listen-dev.pid
+	@echo ""
 	@echo "Start API and Worker from VS Code (F5) or:"
 	@echo "  SUBSCRIPTIONS_DATABASE_URL=postgresql+asyncpg://subscriptions:test@localhost:5432/subscriptions \\"
 	@echo "  KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \\"
 	@echo "  uv run uvicorn subscriptions.api.app:app --port 8000 --reload"
 
 dev-down:
+	@if [ -f /tmp/stripe-listen-dev.pid ]; then kill $$(cat /tmp/stripe-listen-dev.pid) 2>/dev/null || true; rm -f /tmp/stripe-listen-dev.pid; echo "Stopped stripe listen"; fi
 	POSTGRES_PASSWORD=test $(COMPOSE_DEV) down
 
 dev-reset:
