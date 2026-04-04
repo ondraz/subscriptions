@@ -24,6 +24,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     kafka_url = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
     engine = make_engine(db_url)
+
+    async with engine.begin() as conn:
+        from subscriptions.models import metadata as sa_metadata
+
+        await conn.run_sync(sa_metadata.create_all)
+
     app.state.session_factory = make_session_factory(engine)
 
     producer = EventProducer(bootstrap_servers=kafka_url)
