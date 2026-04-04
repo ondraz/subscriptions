@@ -344,6 +344,11 @@ def seed(num_customers: int, num_months: int) -> str:
         print(f"  [{action:14s}] {name} #{i + 1} → {plan_label}")
 
     # 3. Advance through months
+    #
+    # Each month we also add new trial subscriptions.  Some convert to Starter
+    # after 30 days and some churn, producing realistic MoM growth.
+    customer_counter = len(entries)
+
     print(f"\nAdvancing time through {num_months} months ({len(clocks)} clocks)...")
     current = start_date
 
@@ -403,6 +408,65 @@ def seed(num_customers: int, num_months: int) -> str:
                     # Trial ended, now billing as Starter — start reporting usage
                     entry["base_usage"] = 25
                     print(f"  → Trial converted for {cust.name}, now active Starter")
+
+        # ── Handle previous month's trial outcomes (convert or churn) ──
+        for entry in entries:
+            if entry.get("_trial_outcome") == month:
+                if entry["action"] == "trial_monthly_convert":
+                    entry["base_usage"] = random.randint(15, 60)
+                    print(f"  → Trial converted: {entry['customer'].name}")
+                elif entry["action"] == "trial_monthly_churn":
+                    stripe.Subscription.cancel(entry["subscription"].id)
+                    entry["active"] = False
+                    print(f"  → Trial churned: {entry['customer'].name}")
+
+        # ── Add new trial customers for this month ──
+        if month < num_months - 1:  # don't add trials in the last month
+            new_trials = random.randint(2, 5)
+            convert_count = random.randint(1, new_trials - 1) if new_trials > 1 else 1
+            current_ts = int(current.timestamp())
+
+            print(
+                f"  + Adding {new_trials} new trials "
+                f"({convert_count} will convert, {new_trials - convert_count} will churn)"
+            )
+            for t in range(new_trials):
+                customer_counter += 1
+                # New clock for each batch of 3
+                if t % MAX_CUSTOMERS_PER_CLOCK == 0:
+                    batch = len(clocks) + 1
+                    clock = stripe.test_helpers.TestClock.create(
+                        frozen_time=current_ts,
+                        name=f"Seed batch {batch} — trials {current.date()}",
+                    )
+                    clocks.append(clock)
+
+                will_convert = t < convert_count
+                action = "trial_monthly_convert" if will_convert else "trial_monthly_churn"
+                label = "→convert" if will_convert else "→churn"
+                cname = f"Trial {current.strftime('%b')} {label} #{customer_counter}"
+
+                cust = create_customer(cname, customer_counter, clocks[-1].id)
+                items = subscription_items(plans, "trial", "month")
+                trial_end = current_ts + 30 * 86400
+
+                sub = stripe.Subscription.create(
+                    customer=cust.id,
+                    items=items,
+                    trial_end=trial_end,
+                )
+                entries.append(
+                    {
+                        "customer": cust,
+                        "subscription": sub,
+                        "action": action,
+                        "plan": "trial",
+                        "billing": "month",
+                        "base_usage": 0,
+                        "active": True,
+                        "_trial_outcome": month + 1,  # process outcome next month
+                    }
+                )
 
         # ── Advance all clocks ──
         prev = current
