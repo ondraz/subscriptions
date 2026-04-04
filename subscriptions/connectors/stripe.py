@@ -131,27 +131,46 @@ class StripeConnector(WebhookConnector):
             return datetime.fromtimestamp(ts, tz=UTC)
         return datetime.now(UTC)
 
-    @staticmethod
-    def _sub_occurred(sub: dict[str, Any], wh: dict[str, Any]) -> datetime:
+    # Cache test clock frozen times to avoid repeated API calls.
+    _clock_cache: dict[str, int] = {}
+
+    @classmethod
+    def _resolve_test_clock(cls, clock_id: str) -> int | None:
+        """Return the frozen_time for a test clock, with caching."""
+        if clock_id in cls._clock_cache:
+            return cls._clock_cache[clock_id]
+        try:
+            clock = stripe.test_helpers.TestClock.retrieve(clock_id)
+            cls._clock_cache[clock_id] = clock.frozen_time
+            return clock.frozen_time
+        except Exception:
+            return None
+
+    @classmethod
+    def _sub_occurred(cls, sub: dict[str, Any], wh: dict[str, Any]) -> datetime:
         """Best timestamp for a subscription status-change event.
 
         Stripe test clocks set ``wh["created"]`` to real wall-clock time, but
-        the subscription's billing fields use the simulated clock.  Prefer
-        object-level timestamps that reflect the simulated timeline.
+        the subscription's billing fields use the simulated clock.
 
-        ``current_period_start`` was removed in Stripe API 2024+; we fall
-        back to ``billing_cycle_anchor`` which tracks the billing period
-        boundary in simulated time.
+        Priority:
+        1. ``ended_at`` / ``canceled_at`` — set by Stripe in simulated time.
+        2. ``current_period_start`` — removed in Stripe API 2024+, but check.
+        3. Test clock ``frozen_time`` — accurate simulated time.
+        4. ``wh["created"]`` — real wall-clock time (correct for production).
         """
-        for field in (
-            "ended_at",
-            "canceled_at",
-            "current_period_start",
-            "billing_cycle_anchor",
-        ):
+        for field in ("ended_at", "canceled_at", "current_period_start"):
             ts = sub.get(field)
             if ts:
                 return datetime.fromtimestamp(ts, tz=UTC)
+
+        # For test clock subscriptions, look up the clock's frozen time.
+        clock_id = sub.get("test_clock")
+        if clock_id:
+            frozen = cls._resolve_test_clock(clock_id)
+            if frozen:
+                return datetime.fromtimestamp(frozen, tz=UTC)
+
         return datetime.fromtimestamp(wh["created"], tz=UTC)
 
     # ── customer handlers ────────────────────────────────────────────────
