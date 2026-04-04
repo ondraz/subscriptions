@@ -43,20 +43,20 @@ METER_EVENT_NAME = "analytical_query"
 
 # (name_prefix, plan, billing, action, monthly_queries)
 ARCHETYPES = [
-    ("Active Starter", "Starter", "month", "active", 1200),
-    ("Active Starter", "Starter", "month", "active", 800),
-    ("Active Starter Heavy", "Starter", "month", "active", 5000),
+    ("Active Starter", "Starter", "month", "active", 50),
+    ("Active Starter", "Starter", "month", "active", 30),
+    ("Active Starter Heavy", "Starter", "month", "active", 120),
     ("Active Monthly Pro", "Professional", "month", "active", 8000),
     ("Active Monthly Pro", "Professional", "month", "active", 15000),
     ("Active Annual Pro", "Professional", "year", "active", 12000),
     ("Active Annual Enterprise", "Enterprise", "year", "active", 0),
-    ("Churned Starter", "Starter", "month", "churn", 600),
+    ("Churned Starter", "Starter", "month", "churn", 20),
     ("Churned Pro", "Professional", "month", "churn", 9000),
-    ("Upgraded Starter→Pro", "Starter", "month", "upgrade", 3000),
-    ("Upgraded Starter→Pro", "Starter", "month", "upgrade", 4000),
+    ("Upgraded Starter→Pro", "Starter", "month", "upgrade", 80),
+    ("Upgraded Starter→Pro", "Starter", "month", "upgrade", 60),
     ("Downgraded Pro→Starter", "Professional", "month", "downgrade", 2000),
-    ("Failed Payment Starter", "Starter", "month", "fail_payment", 1000),
-    ("Trial→Active Starter", "trial", "month", "trial_convert", 0),
+    ("Failed Payment Starter", "Starter", "month", "fail_payment", 40),
+    ("Trial→Active Starter", "trial", "month", "trial_convert", 25),
     ("Trial→Expired", "trial", "month", "trial_expire", 0),
 ]
 
@@ -94,23 +94,33 @@ def create_plans() -> dict:
     result["_meter"] = meter
     print(f"  Meter:        {meter.id} (event={METER_EVENT_NAME})")
 
-    # ── Starter: pure PAYG ─────────────────────────────────────────────
+    # ── Starter: $20/mo base + $1/query metered ─────────────────────────
     starter_prod = stripe.Product.create(
         name="Starter",
         metadata={"tier": "starter"},
     )
+    starter_base = stripe.Price.create(
+        product=starter_prod.id,
+        unit_amount=2000,  # $20/mo
+        currency="usd",
+        recurring={"interval": "month"},
+        nickname="Starter — $20/mo base",
+    )
     starter_metered = stripe.Price.create(
         product=starter_prod.id,
         currency="usd",
-        unit_amount=2,  # $0.02
+        unit_amount=100,  # $1/query
         recurring={"interval": "month", "meter": meter.id, "usage_type": "metered"},
-        nickname="Starter — $0.02/query",
+        nickname="Starter — $1/query",
     )
     result["Starter"] = {
         "product": starter_prod,
+        "base_monthly": starter_base,
         "metered_monthly": starter_metered,
     }
-    print(f"  Starter:      PAYG $0.02/query (metered={starter_metered.id})")
+    print(
+        f"  Starter:      $20/mo + $1/query (base={starter_base.id}, metered={starter_metered.id})"
+    )
 
     # ── Professional: base fee + metered overage ───────────────────────
     pro_prod = stripe.Product.create(
@@ -196,7 +206,10 @@ def create_plans() -> dict:
 def subscription_items(plans: dict, plan: str, billing: str) -> list[dict]:
     """Return the list of price items for a new subscription."""
     if plan in ("Starter", "trial"):
-        return [{"price": plans["Starter"]["metered_monthly"].id}]
+        return [
+            {"price": plans["Starter"]["base_monthly"].id},
+            {"price": plans["Starter"]["metered_monthly"].id},
+        ]
     if plan == "Professional":
         suffix = "annual" if billing == "year" else "monthly"
         return [
@@ -244,14 +257,16 @@ def create_customer(
         metadata={"seed": "true", "archetype": name},
     )
 
-    if not failing_card:
-        pm = stripe.PaymentMethod.create(type="card", card={"token": "tok_visa"})
-        stripe.PaymentMethod.attach(pm.id, customer=customer.id)
-        stripe.Customer.modify(
-            customer.id,
-            invoice_settings={"default_payment_method": pm.id},
-        )
-    # failing_card customers get no payment method — invoices will fail to auto-pay
+    # Attach a card that declines on charge (4000000000000341) for fail_payment,
+    # or a normal Visa for everyone else.
+    # tok_chargeCustomerFail attaches OK but fails on charge
+    token = "tok_chargeCustomerFail" if failing_card else "tok_visa"
+    pm = stripe.PaymentMethod.create(type="card", card={"token": token})
+    stripe.PaymentMethod.attach(pm.id, customer=customer.id)
+    stripe.Customer.modify(
+        customer.id,
+        invoice_settings={"default_payment_method": pm.id},
+    )
 
     return customer
 
@@ -355,13 +370,12 @@ def seed(num_customers: int, num_months: int) -> str:
                 elif action == "upgrade":
                     # Starter → Professional monthly
                     old_items = sub["items"]["data"]
+                    modify_items = [{"id": it.id, "deleted": True} for it in old_items]
+                    modify_items.append({"price": plans["Professional"]["base_monthly"].id})
+                    modify_items.append({"price": plans["Professional"]["metered_monthly"].id})
                     sub = stripe.Subscription.modify(
                         sub.id,
-                        items=[
-                            {"id": old_items[0].id, "deleted": True},
-                            {"price": plans["Professional"]["base_monthly"].id},
-                            {"price": plans["Professional"]["metered_monthly"].id},
-                        ],
+                        items=modify_items,
                         proration_behavior="create_prorations",
                     )
                     entry["subscription"] = sub
@@ -373,6 +387,7 @@ def seed(num_customers: int, num_months: int) -> str:
                     # Professional → Starter
                     old_items = sub["items"]["data"]
                     modify_items = [{"id": it.id, "deleted": True} for it in old_items]
+                    modify_items.append({"price": plans["Starter"]["base_monthly"].id})
                     modify_items.append({"price": plans["Starter"]["metered_monthly"].id})
                     sub = stripe.Subscription.modify(
                         sub.id,
@@ -381,11 +396,12 @@ def seed(num_customers: int, num_months: int) -> str:
                     )
                     entry["subscription"] = sub
                     entry["plan"] = "Starter"
+                    entry["base_usage"] = 40
                     print(f"  → Downgraded {cust.name} to Starter")
 
                 elif action == "trial_convert":
                     # Trial ended, now billing as Starter — start reporting usage
-                    entry["base_usage"] = 1500
+                    entry["base_usage"] = 25
                     print(f"  → Trial converted for {cust.name}, now active Starter")
 
         # ── Advance all clocks ──
