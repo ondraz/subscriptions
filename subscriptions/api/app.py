@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from subscriptions.bus import EventProducer
 from subscriptions.database import make_engine, make_session_factory
@@ -62,3 +63,20 @@ app.include_router(health.router)
 app.include_router(webhooks.router, prefix="/api")
 app.include_router(metrics.router, prefix="/api")
 app.include_router(sources.router, prefix="/api")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse("/docs")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    # Wave emoji as SVG favicon
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+        '<text y=".9em" font-size="90">📊</text></svg>'
+    )
+    from fastapi.responses import Response
+
+    return Response(content=svg, media_type="image/svg+xml")
