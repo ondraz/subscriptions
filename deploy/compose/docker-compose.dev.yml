@@ -1,0 +1,28 @@
+# Local development: run API from your IDE (VS Code debugger), only
+# infrastructure services in Docker.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Then start the API and worker from VS Code (or terminal):
+#   SUBSCRIPTIONS_DATABASE_URL=postgresql+asyncpg://subscriptions:test@localhost:5432/subscriptions \
+#   KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
+#   uv run uvicorn subscriptions.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redpanda:
+    ports:
+      - "9092:9092"
+
+  api:
+    profiles: [disabled]
+
+  worker:
+    profiles: [disabled]
+
+  caddy:
+    profiles: [disabled]

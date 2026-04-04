@@ -1,4 +1,4 @@
-.PHONY: docs check check-integration check-e2e lint test typecheck install install-dev install-pre-commit
+.PHONY: docs check check-integration check-e2e dev dev-down lint test typecheck install install-dev install-pre-commit
 
 install:
 	uv sync --frozen
@@ -56,6 +56,21 @@ check-e2e:
 	@test -n "$(STRIPE_API_KEY)" || (echo "Error: STRIPE_API_KEY must be set" && exit 1)
 	STRIPE_API_KEY=$(STRIPE_API_KEY) ./scripts/test-e2e.sh --cleanup-only
 	STRIPE_API_KEY=$(STRIPE_API_KEY) ./scripts/test-e2e.sh
+
+
+COMPOSE_DEV := docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.dev.yml
+
+dev:
+	POSTGRES_PASSWORD=test $(COMPOSE_DEV) up -d
+	@echo ""
+	@echo "Infrastructure running: PostgreSQL :5432, Redpanda :9092"
+	@echo "Start API and Worker from VS Code (F5) or:"
+	@echo "  SUBSCRIPTIONS_DATABASE_URL=postgresql+asyncpg://subscriptions:test@localhost:5432/subscriptions \\"
+	@echo "  KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \\"
+	@echo "  uv run uvicorn subscriptions.api.app:app --port 8000 --reload"
+
+dev-down:
+	POSTGRES_PASSWORD=test $(COMPOSE_DEV) down -v
 
 
 docs:

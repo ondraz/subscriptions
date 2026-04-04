@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API (uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "subscriptions.api.app:app",
+        "--host", "0.0.0.0",
+        "--port", "8000",
+        "--reload"
+      ],
+      "env": {
+        "SUBSCRIPTIONS_DATABASE_URL": "postgresql+asyncpg://subscriptions:test@localhost:5432/subscriptions",
+        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
+        "STRIPE_API_KEY": "${env:STRIPE_API_KEY}",
+        "STRIPE_WEBHOOK_SECRET": "${env:STRIPE_WEBHOOK_SECRET}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Worker",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "subscriptions.worker",
+      "env": {
+        "SUBSCRIPTIONS_DATABASE_URL": "postgresql+asyncpg://subscriptions:test@localhost:5432/subscriptions",
+        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}
