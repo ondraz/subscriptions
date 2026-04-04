@@ -1,4 +1,4 @@
-.PHONY: docs check check-integration lint test typecheck install install-dev install-pre-commit
+.PHONY: docs check check-integration check-stripe lint test typecheck install install-dev install-pre-commit
 
 install:
 	uv sync --frozen
@@ -50,6 +50,11 @@ check-integration:
 		rc=$$?; \
 		docker rm -f $(PG_CONTAINER) >/dev/null 2>&1; \
 		exit $$rc
+
+
+check-stripe:
+	@test -n "$(STRIPE_API_KEY)" || (echo "Error: STRIPE_API_KEY must be set" && exit 1)
+	STRIPE_API_KEY=$(STRIPE_API_KEY) ./scripts/test-stripe-local.sh
 
 
 docs:
