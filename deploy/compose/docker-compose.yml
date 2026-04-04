@@ -42,7 +42,7 @@ services:
       uv run uvicorn subscriptions.api.app:app
       --host 0.0.0.0 --port 8000
     environment:
-      DATABASE_URL: postgresql+asyncpg://subscriptions:${POSTGRES_PASSWORD}@postgres:5432/subscriptions
+      SUBSCRIPTIONS_DATABASE_URL: postgresql+asyncpg://subscriptions:${POSTGRES_PASSWORD}@postgres:5432/subscriptions
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       STRIPE_API_KEY: ${STRIPE_API_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
@@ -61,7 +61,7 @@ services:
     restart: unless-stopped
     command: uv run python -m subscriptions.worker
     environment:
-      DATABASE_URL: postgresql+asyncpg://subscriptions:${POSTGRES_PASSWORD}@postgres:5432/subscriptions
+      SUBSCRIPTIONS_DATABASE_URL: postgresql+asyncpg://subscriptions:${POSTGRES_PASSWORD}@postgres:5432/subscriptions
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
     depends_on:
       postgres:
