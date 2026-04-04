@@ -207,7 +207,7 @@ subscription = Table(
     Column("source_id", Text, ForeignKey("connector_source.id"), nullable=False),
     Column("external_id", Text, nullable=False),
     Column("customer_id", Text, ForeignKey("customer.id"), nullable=False),
-    Column("plan_id", Text, ForeignKey("plan.id"), nullable=False),
+    Column("plan_id", Text, ForeignKey("plan.id")),
     Column("status", Text, nullable=False),
     Column("mrr_cents", BigInteger, nullable=False, default=0),
     Column("mrr_base_cents", BigInteger, nullable=False, default=0),
