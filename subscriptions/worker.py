@@ -27,6 +27,19 @@ async def run_worker() -> None:
     kafka_url = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
     engine = make_engine(db_url)
+
+    # Ensure connector source exists before consuming events.
+    async with engine.begin() as conn:
+        from sqlalchemy import text
+
+        await conn.execute(
+            text(
+                "INSERT INTO connector_source (id, type, name, created_at)"
+                " VALUES ('stripe', 'stripe', 'Stripe', NOW())"
+                " ON CONFLICT (id) DO NOTHING"
+            )
+        )
+
     factory = make_session_factory(engine)
 
     dlq = EventProducer(bootstrap_servers=kafka_url, topic=DLQ_TOPIC)

@@ -30,6 +30,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         await conn.run_sync(sa_metadata.create_all)
 
+        # Ensure the "stripe" connector source exists.
+        from sqlalchemy import text
+
+        await conn.execute(
+            text(
+                "INSERT INTO connector_source (id, type, name, created_at)"
+                " VALUES ('stripe', 'stripe', 'Stripe', NOW())"
+                " ON CONFLICT (id) DO NOTHING"
+            )
+        )
+
     app.state.session_factory = make_session_factory(engine)
 
     producer = EventProducer(bootstrap_servers=kafka_url)
