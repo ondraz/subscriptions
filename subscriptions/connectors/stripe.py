@@ -595,11 +595,11 @@ class StripeConnector(WebhookConnector):
                 payload={
                     "external_id": inv.id,
                     "customer_external_id": inv.customer,
-                    "subscription_external_id": inv.subscription,  # type: ignore[attr-defined]
+                    "subscription_external_id": getattr(inv, "subscription", None),
                     "status": inv.status,
                     "currency": inv.currency,
                     "subtotal_cents": inv.subtotal or 0,
-                    "tax_cents": inv.tax or 0,  # type: ignore[attr-defined]
+                    "tax_cents": getattr(inv, "tax", 0) or 0,
                     "total_cents": inv.total or 0,
                     "period_start": _ts(inv.period_start),
                     "period_end": _ts(inv.period_end),
@@ -634,7 +634,7 @@ class StripeConnector(WebhookConnector):
                     occurred_at=datetime.fromtimestamp(pi.created, tz=UTC),
                     payload={
                         "external_id": pi.id,
-                        "invoice_external_id": pi.invoice,  # type: ignore[attr-defined]
+                        "invoice_external_id": getattr(pi, "invoice", None),
                         "customer_external_id": pi.customer,
                         "amount_cents": pi.amount or 0,
                         "currency": pi.currency,
