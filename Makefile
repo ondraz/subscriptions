@@ -91,7 +91,7 @@ dev-reset: ## Stop dev environment and delete volumes
 
 docs: ## Start MkDocs dev server on :8001
 	@echo "Starting MkDocs server..."
-	uv tool run --from mkdocs-material mkdocs serve -a 127.0.0.1:8001 -f docs/mkdocs.yml
+	uv run mkdocs serve -a 127.0.0.1:8001 -f docs/mkdocs.yml
 
 
 .PHONY: install-post-hooks

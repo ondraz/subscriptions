@@ -29,6 +29,10 @@ theme:
     - search.highlight
     - content.code.copy
 
+plugins:
+  - search
+  - mkdocs-jupyter
+
 markdown_extensions:
   - tables
   - admonition
@@ -62,3 +66,7 @@ nav:
       - Analytics Tools: research/analytics-tools.md
       - Competitive Matrix: research/competitive-matrix.md
       - Product Positioning: research/product-positioning.md
+  - Notebooks:
+      - MRR: notebooks/01_mrr.ipynb
+      - Churn: notebooks/02_churn.ipynb
+      - Retention: notebooks/03_retention.ipynb
