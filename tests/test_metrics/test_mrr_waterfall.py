@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from subscriptions.metrics.mrr.metric import MrrMetric
+from tidemill.metrics.mrr.metric import MrrMetric
 
 from .conftest import SRC_PG, make_evt
 
@@ -52,14 +52,14 @@ class TestMrrWaterfall:
 
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
                 occurred_at=jan,
             )
         )
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_2", "mrr_cents": 3000, "currency": "USD"},
                 external_id="sub_2",
                 customer_id="cus_2",
@@ -94,7 +94,7 @@ class TestMrrWaterfall:
         # New sub at 5000 cents
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
                 occurred_at=jan,
             )
@@ -115,7 +115,7 @@ class TestMrrWaterfall:
         # Another sub created then churned
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_2", "mrr_cents": 2000, "currency": "USD"},
                 external_id="sub_2",
                 customer_id="cus_2",
@@ -154,7 +154,7 @@ class TestMrrWaterfall:
 
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
                 occurred_at=jan,
             )
@@ -182,7 +182,7 @@ class TestMrrWaterfall:
 
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
                 occurred_at=dec,
             )
@@ -207,7 +207,7 @@ class TestMrrWaterfall:
 
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
                 occurred_at=jan,
             )
@@ -249,7 +249,7 @@ class TestMrrWaterfall:
 
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 9000, "currency": "USD"},
                 occurred_at=jan,
             )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from subscriptions.events import Event, make_event_id
+from tidemill.events import Event, make_event_id
 
 SRC = "src_1"
 T0 = datetime(2026, 1, 15, tzinfo=UTC)

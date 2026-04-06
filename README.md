@@ -1,4 +1,4 @@
-# Subscriptions
+# Tidemill
 
 Open-source subscription analytics — compute and visualize MRR, ARR, LTV, retention, churn, and more from your billing data.
 
@@ -6,7 +6,7 @@ Open-source subscription analytics — compute and visualize MRR, ARR, LTV, rete
 
 ## Research
 
-All research docs are published at **https://ondraz.github.io/subscriptions/** and live in [`docs/research/`](docs/research/).
+All research docs are published at **https://ondraz.github.io/tidemill/** and live in [`docs/research/`](docs/research/).
 
 - [Market Overview](docs/research/market-overview.md) — subscription economy sizing, trends, and key metrics
 - [Business Models](docs/research/business-models.md) — subscription model types and where they fit

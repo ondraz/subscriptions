@@ -2,18 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "API (uvicorn)",
+      "name": "Tidemill API (uvicorn)",
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
       "args": [
-        "subscriptions.api.app:app",
+        "tidemill.api.app:app",
         "--host", "0.0.0.0",
         "--port", "8000",
         "--reload"
       ],
       "env": {
-        "SUBSCRIPTIONS_DATABASE_URL": "postgresql+asyncpg://subscriptions:test@localhost:5432/subscriptions",
+        "TIDEMILL_DATABASE_URL": "postgresql+asyncpg://tidemill:test@localhost:5432/tidemill",
         "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
         "STRIPE_API_KEY": "${env:STRIPE_API_KEY}",
         "STRIPE_WEBHOOK_SECRET": "${env:STRIPE_WEBHOOK_SECRET}"
@@ -22,12 +22,12 @@
       "justMyCode": false
     },
     {
-      "name": "Worker",
+      "name": "Tidemill Worker",
       "type": "debugpy",
       "request": "launch",
-      "module": "subscriptions.worker",
+      "module": "tidemill.worker",
       "env": {
-        "SUBSCRIPTIONS_DATABASE_URL": "postgresql+asyncpg://subscriptions:test@localhost:5432/subscriptions",
+        "TIDEMILL_DATABASE_URL": "postgresql+asyncpg://tidemill:test@localhost:5432/tidemill",
         "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092"
       },
       "console": "integratedTerminal",

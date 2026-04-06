@@ -13,7 +13,7 @@ variable "tailscale_auth_key" {
 variable "server_name" {
   description = "Name of the server"
   type        = string
-  default     = "subscriptions"
+  default     = "tidemill"
 }
 
 variable "server_type" {

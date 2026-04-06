@@ -135,7 +135,7 @@ class Metric(ABC):
 Metrics register themselves via a decorator:
 
 ```python
-from subscriptions.metrics import register
+from tidemill.metrics import register
 
 @register
 class MrrMetric(Metric):
@@ -171,7 +171,7 @@ At startup, the engine:
 3. Initializes metrics in dependency order; injects resolved instances
 4. Calls `register_tables()` on each — tables are added to the SQLAlchemy metadata
 5. Runs Alembic migrations (or `metadata.create_all()` in dev)
-6. **Ingestion mode only:** starts a Kafka consumer per metric (consumer group: `subscriptions.metric.{name}`)
+6. **Ingestion mode only:** starts a Kafka consumer per metric (consumer group: `tidemill.metric.{name}`)
 
 ## Lifecycle
 
@@ -781,7 +781,7 @@ Multiple dimensions can be combined: `dimensions=["plan_interval", "customer_cou
 
 ### Cubes & Query Algebra
 
-All metrics build their SQL through cubes and composable query fragments (`subscriptions/metrics/query.py`). Each metric declares a `Cube` that defines the available joins, measures, and dimensions for its fact table. Query methods compose immutable `QueryFragment` objects — each fragment carries column expressions, filters, and required joins. The compiler resolves joins in dependency order and emits a SQLAlchemy `Select`.
+All metrics build their SQL through cubes and composable query fragments (`tidemill/metrics/query.py`). Each metric declares a `Cube` that defines the available joins, measures, and dimensions for its fact table. Query methods compose immutable `QueryFragment` objects — each fragment carries column expressions, filters, and required joins. The compiler resolves joins in dependency order and emits a SQLAlchemy `Select`.
 
 See **[Cubes & Query Algebra](cubes.md)** for the full approach: model definitions, fragment algebra, compilation pipeline, and concrete models for all metric tables.
 

@@ -14,47 +14,47 @@ The CLI provides programmatic access to all metrics. It uses the same `MetricsEn
 ### Installation
 
 ```bash
-pip install subscriptions
+pip install tidemill
 # or
-uv pip install subscriptions
+uv pip install tidemill
 ```
 
 ### Commands
 
 ```bash
 # Current MRR
-subscriptions mrr
+tidemill mrr
 # $12,450.00
 
 # MRR as of a specific date
-subscriptions mrr --at 2026-01-01
+tidemill mrr --at 2026-01-01
 
 # MRR time series
-subscriptions mrr --start 2025-01-01 --end 2026-01-01 --interval month
+tidemill mrr --start 2025-01-01 --end 2026-01-01 --interval month
 
 # ARR
-subscriptions arr
+tidemill arr
 
 # Net new MRR breakdown
-subscriptions mrr breakdown --start 2026-01-01 --end 2026-03-01
+tidemill mrr breakdown --start 2026-01-01 --end 2026-03-01
 
 # Churn rate (default: logo churn)
-subscriptions churn --start 2026-01-01 --end 2026-03-01
+tidemill churn --start 2026-01-01 --end 2026-03-01
 
 # Revenue churn
-subscriptions churn --type revenue --start 2026-01-01 --end 2026-03-01
+tidemill churn --type revenue --start 2026-01-01 --end 2026-03-01
 
 # Retention cohorts
-subscriptions retention --start 2025-01-01 --end 2026-01-01
+tidemill retention --start 2025-01-01 --end 2026-01-01
 
 # All metrics summary
-subscriptions summary
+tidemill summary
 
 # Output as JSON (for piping to other tools)
-subscriptions mrr --format json
+tidemill mrr --format json
 
 # Output as CSV
-subscriptions mrr --start 2025-01-01 --end 2026-01-01 --interval month --format csv
+tidemill mrr --start 2025-01-01 --end 2026-01-01 --interval month --format csv
 ```
 
 ### Configuration
@@ -63,10 +63,10 @@ The CLI reads configuration from environment variables or a config file:
 
 ```bash
 # Environment variables
-export SUBSCRIPTIONS_DATABASE_URL=postgresql://localhost/lago
-export SUBSCRIPTIONS_CONNECTOR=lago
+export TIDEMILL_DATABASE_URL=postgresql://localhost/lago
+export TIDEMILL_CONNECTOR=lago
 
-# Or config file (~/.subscriptions.toml or .subscriptions.toml)
+# Or config file (~/.tidemill.toml or .tidemill.toml)
 [database]
 url = "postgresql://localhost/lago"
 
@@ -78,13 +78,13 @@ type = "lago"
 
 ```python
 import asyncio
-from subscriptions import MetricsEngine, QuerySpec
+from tidemill import MetricsEngine, QuerySpec
 
 # Ingestion mode (Stripe) — engine queries materialized metric_* tables
 engine = MetricsEngine(db=async_session)
 
 # Same-database mode (Lago) — engine also queries billing tables via connector
-# from subscriptions.connectors import get_connector
+# from tidemill.connectors import get_connector
 # connector = get_connector("lago", engine=async_db_engine)
 # engine = MetricsEngine(db=async_session, connector=connector)
 
@@ -111,10 +111,10 @@ FastAPI is a thin HTTP layer. Every endpoint delegates to `engine.query()`. No b
 
 ```python
 from fastapi import FastAPI, Depends, Query
-from subscriptions import MetricsEngine, QuerySpec
-from subscriptions.database import get_db
+from tidemill import MetricsEngine, QuerySpec
+from tidemill.database import get_db
 
-app = FastAPI(title="Subscriptions API")
+app = FastAPI(title="Tidemill API")
 
 def get_engine() -> MetricsEngine:
     return MetricsEngine(get_db())

@@ -3,7 +3,7 @@
 > Infrastructure as Code for single-server and Kubernetes deployments on Hetzner.
 > Last updated: March 2026
 
-All deployment files live in [`deploy/`](https://github.com/ondraz/subscriptions/tree/main/deploy):
+All deployment files live in [`deploy/`](https://github.com/ondraz/tidemill/tree/main/deploy):
 
 ```
 deploy/
@@ -56,14 +56,14 @@ For Lago or Kill Bill users, the analytics engine can run alongside the billing 
 │  └──────────┘  └───────┬────────┘  │
 │                        │           │
 │  ┌─────────────────────┴────────┐  │
-│  │  subscriptions               │  │
+│  │  tidemill                    │  │
 │  │  (analytics CLI / API)       │  │
 │  │  No Kafka. No worker.        │  │
 │  └──────────────────────────────┘  │
 └────────────────────────────────────┘
 ```
 
-**Services:** Just the `subscriptions` container (or `pip install subscriptions` directly). Connects to the billing engine's PostgreSQL.
+**Services:** Just the `tidemill` container (or `pip install tidemill` directly). Connects to the billing engine's PostgreSQL.
 
 **No Kafka, no worker process, no event bus.** The analytics engine queries billing tables directly at request time.
 
@@ -71,7 +71,7 @@ For Lago or Kill Bill users, the analytics engine can run alongside the billing 
 # docker-compose.yml addition for existing Lago deployment
 services:
   analytics:
-    image: ghcr.io/ondraz/subscriptions:latest
+    image: ghcr.io/ondraz/tidemill:latest
     environment:
       DATABASE_URL: postgresql://lago:password@postgres/lago
       CONNECTOR: lago
@@ -82,11 +82,11 @@ services:
 Or simply install and use the CLI:
 
 ```bash
-pip install subscriptions
-export SUBSCRIPTIONS_DATABASE_URL=postgresql://lago:password@postgres/lago
-export SUBSCRIPTIONS_CONNECTOR=lago
+pip install tidemill
+export TIDEMILL_DATABASE_URL=postgresql://lago:password@postgres/lago
+export TIDEMILL_CONNECTOR=lago
 
-subscriptions mrr
+tidemill mrr
 # $12,450.00
 ```
 
@@ -149,10 +149,10 @@ ssh root@$(terraform output -raw server_ipv4)
 
 ### What cloud-init Does
 
-The server bootstraps itself on first boot via [`cloud-init.yml`](https://github.com/ondraz/subscriptions/tree/main/deploy/terraform/single-server/cloud-init.yml):
+The server bootstraps itself on first boot via [`cloud-init.yml`](https://github.com/ondraz/tidemill/tree/main/deploy/terraform/single-server/cloud-init.yml):
 
 1. Updates packages and installs Docker
-2. Clones the repo to `/opt/subscriptions`
+2. Clones the repo to `/opt/tidemill`
 3. Generates a random Postgres password
 4. Starts Docker Compose (all 5 services)
 5. Enables unattended security updates
@@ -175,7 +175,7 @@ A 3-node HA k3s cluster with separate worker nodes, running on Hetzner. For prod
 | k3s cluster (via `kube-hetzner` module) | 3 control plane nodes + N worker nodes |
 | `hcloud_load_balancer` | Ingress load balancer with public IP |
 | `hcloud_zone_rrset` | DNS records pointing to the load balancer |
-| `kubernetes_namespace` | `subscriptions` namespace |
+| `kubernetes_namespace` | `tidemill` namespace |
 | `kubernetes_secret` | Database credentials, Kafka config |
 | `kubernetes_stateful_set` × 2 | PostgreSQL + Redpanda with Hetzner CSI volumes |
 | `kubernetes_deployment` × 2 | API (2 replicas) + Worker (2 replicas) |
@@ -216,7 +216,7 @@ terraform apply
 
 # 3. Access the cluster
 export KUBECONFIG=$(terraform output -raw kubeconfig_path)
-kubectl get pods -n subscriptions
+kubectl get pods -n tidemill
 
 # 4. Verify
 curl https://tidemill.xyz/healthz
@@ -226,10 +226,10 @@ curl https://tidemill.xyz/healthz
 
 ```bash
 # Scale API replicas
-kubectl scale deployment api -n subscriptions --replicas=4
+kubectl scale deployment api -n tidemill --replicas=4
 
 # Scale workers (Kafka rebalances partitions automatically)
-kubectl scale deployment worker -n subscriptions --replicas=4
+kubectl scale deployment worker -n tidemill --replicas=4
 
 # Add more Hetzner worker nodes — edit terraform.tfvars:
 #   worker_count = 4
@@ -252,7 +252,7 @@ For a production Kubernetes deployment, consider:
 
 - **Managed PostgreSQL** — replace the StatefulSet with Hetzner DBaaS or an external managed database. Remove the `kubernetes_stateful_set.postgres` resource and update `DATABASE_URL` in the secret.
 - **Redpanda cluster** — replace the single-node StatefulSet with the [Redpanda Helm chart](https://github.com/redpanda-data/helm-charts) for a 3-broker cluster, or use Confluent Cloud / Amazon MSK.
-- **Image registry** — push to GitHub Container Registry (`ghcr.io/ondraz/subscriptions`) and pin image tags instead of `latest`.
+- **Image registry** — push to GitHub Container Registry (`ghcr.io/ondraz/tidemill`) and pin image tags instead of `latest`.
 - **Secrets management** — use [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) or [External Secrets Operator](https://external-secrets.io/) instead of plain Kubernetes secrets.
 - **Monitoring** — deploy Prometheus + Grafana via Helm for cluster and application metrics.
 - **Backups** — use [Velero](https://velero.io/) for cluster backup, pg_dump CronJob for PostgreSQL.
@@ -278,8 +278,8 @@ The Docker Compose and Kubernetes deployments use the same container images and 
 
 ```bash
 # PostgreSQL dump (add to crontab on the server)
-docker compose exec postgres pg_dump -U subscriptions subscriptions \
-  | gzip > /opt/backups/subscriptions-$(date +%F).sql.gz
+docker compose exec postgres pg_dump -U tidemill tidemill \
+  | gzip > /opt/backups/tidemill-$(date +%F).sql.gz
 
 # Or use Hetzner server snapshots (~€0.01/GB/mo)
 ```
@@ -288,8 +288,8 @@ docker compose exec postgres pg_dump -U subscriptions subscriptions \
 
 ```bash
 # PostgreSQL dump via CronJob (or use Velero for full cluster backup)
-kubectl exec -n subscriptions postgres-0 -- \
-  pg_dump -U subscriptions subscriptions | gzip > backup.sql.gz
+kubectl exec -n tidemill postgres-0 -- \
+  pg_dump -U tidemill tidemill | gzip > backup.sql.gz
 ```
 
 ## Why Redpanda over Apache Kafka

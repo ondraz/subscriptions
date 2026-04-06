@@ -2,7 +2,7 @@
 # Firewall — allow HTTPS inbound only (SSH via Tailscale, not public)
 # ---------------------------------------------------------------------------
 
-resource "hcloud_firewall" "subscriptions" {
+resource "hcloud_firewall" "tidemill" {
   name = "${var.server_name}-fw"
 
   # HTTP (Caddy ACME challenge + redirect to HTTPS)
@@ -37,6 +37,6 @@ resource "hcloud_firewall" "subscriptions" {
   }
 
   labels = {
-    app = "subscriptions"
+    app = "tidemill"
   }
 }

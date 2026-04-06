@@ -1,5 +1,5 @@
 [project]
-name = "subscriptions"
+name = "tidemill"
 version = "0.1.0"
 description = "Open-source subscription analytics engine"
 license = "MIT"
@@ -37,7 +37,7 @@ url = "https://pypi.org/simple"
 
 
 [project.scripts]
-subs = "subscriptions.cli.main:cli"
+tidemill = "tidemill.cli.main:cli"
 
 [build-system]
 requires = ["hatchling"]
@@ -68,20 +68,25 @@ line-length = 99
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH"]
 
 [tool.ruff.lint.per-file-ignores]
-"subscriptions/api/routers/*.py" = ["B008", "TCH003"]
-"subscriptions/cli/*.py" = ["B008"]
+"tidemill/api/routers/*.py" = ["B008", "TCH003"]
+"tidemill/cli/*.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.13"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
-packages = ["subscriptions"]
+packages = ["tidemill"]
 
 [[tool.mypy.overrides]]
-module = ["subscriptions.metrics.mrr", "subscriptions.metrics.churn", "subscriptions.metrics.retention"]
+module = ["tidemill.metrics.mrr", "tidemill.metrics.churn", "tidemill.metrics.retention"]
 disable_error_code = ["override"]
 
 [[tool.mypy.overrides]]
 module = ["aiokafka", "aiokafka.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pandas", "pandas.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true

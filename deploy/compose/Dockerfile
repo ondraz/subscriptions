@@ -12,8 +12,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --extra pg
 
 # Copy application code
-COPY subscriptions/ subscriptions/
+COPY tidemill/ tidemill/
 RUN uv sync --frozen --no-dev --no-editable --extra pg
 
 # Default: API server (overridden per service in docker-compose.yml)
-CMD ["uv", "run", "uvicorn", "subscriptions.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "tidemill.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Kubernetes resources for the subscriptions application
+# Kubernetes resources for the tidemill application
 #
 # After the cluster is provisioned, this deploys:
 # - Namespace
@@ -31,9 +31,9 @@ provider "helm" {
 # Namespace
 # ---------------------------------------------------------------------------
 
-resource "kubernetes_namespace" "subscriptions" {
+resource "kubernetes_namespace" "tidemill" {
   metadata {
-    name = "subscriptions"
+    name = "tidemill"
   }
 
   depends_on = [module.kube_hetzner]
@@ -50,13 +50,13 @@ resource "random_password" "postgres" {
 
 resource "kubernetes_secret" "app" {
   metadata {
-    name      = "subscriptions"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    name      = "tidemill"
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
   }
 
   data = {
     POSTGRES_PASSWORD      = random_password.postgres.result
-    DATABASE_URL           = "postgresql+asyncpg://subscriptions:${random_password.postgres.result}@postgres:5432/subscriptions"
+    DATABASE_URL           = "postgresql+asyncpg://tidemill:${random_password.postgres.result}@postgres:5432/tidemill"
     KAFKA_BOOTSTRAP_SERVERS = "redpanda:9092"
   }
 }
@@ -68,7 +68,7 @@ resource "kubernetes_secret" "app" {
 resource "kubernetes_stateful_set" "postgres" {
   metadata {
     name      = "postgres"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
   }
 
   spec {
@@ -95,11 +95,11 @@ resource "kubernetes_stateful_set" "postgres" {
 
           env {
             name  = "POSTGRES_DB"
-            value = "subscriptions"
+            value = "tidemill"
           }
           env {
             name  = "POSTGRES_USER"
-            value = "subscriptions"
+            value = "tidemill"
           }
           env {
             name = "POSTGRES_PASSWORD"
@@ -118,7 +118,7 @@ resource "kubernetes_stateful_set" "postgres" {
 
           liveness_probe {
             exec {
-              command = ["pg_isready", "-U", "subscriptions"]
+              command = ["pg_isready", "-U", "tidemill"]
             }
             initial_delay_seconds = 15
             period_seconds        = 10
@@ -150,7 +150,7 @@ resource "kubernetes_stateful_set" "postgres" {
 resource "kubernetes_service" "postgres" {
   metadata {
     name      = "postgres"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
   }
   spec {
     selector = { app = "postgres" }
@@ -169,7 +169,7 @@ resource "kubernetes_service" "postgres" {
 resource "kubernetes_stateful_set" "redpanda" {
   metadata {
     name      = "redpanda"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
   }
 
   spec {
@@ -235,7 +235,7 @@ resource "kubernetes_stateful_set" "redpanda" {
 resource "kubernetes_service" "redpanda" {
   metadata {
     name      = "redpanda"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
   }
   spec {
     selector = { app = "redpanda" }
@@ -254,7 +254,7 @@ resource "kubernetes_service" "redpanda" {
 resource "kubernetes_deployment" "api" {
   metadata {
     name      = "api"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
   }
 
   spec {
@@ -272,8 +272,8 @@ resource "kubernetes_deployment" "api" {
       spec {
         container {
           name  = "api"
-          image = "ghcr.io/ondraz/subscriptions:latest" # TODO: replace with actual image
-          args  = ["uvicorn", "subscriptions.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+          image = "ghcr.io/ondraz/tidemill:latest" # TODO: replace with actual image
+          args  = ["uvicorn", "tidemill.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
           port {
             container_port = 8000
@@ -316,7 +316,7 @@ resource "kubernetes_deployment" "api" {
 resource "kubernetes_service" "api" {
   metadata {
     name      = "api"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
   }
   spec {
     selector = { app = "api" }
@@ -334,7 +334,7 @@ resource "kubernetes_service" "api" {
 resource "kubernetes_deployment" "worker" {
   metadata {
     name      = "worker"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
   }
 
   spec {
@@ -352,8 +352,8 @@ resource "kubernetes_deployment" "worker" {
       spec {
         container {
           name  = "worker"
-          image = "ghcr.io/ondraz/subscriptions:latest"
-          args  = ["python", "-m", "subscriptions.worker"]
+          image = "ghcr.io/ondraz/tidemill:latest"
+          args  = ["python", "-m", "tidemill.worker"]
 
           env_from {
             secret_ref {
@@ -378,7 +378,7 @@ resource "kubernetes_deployment" "worker" {
 resource "kubernetes_ingress_v1" "api" {
   metadata {
     name      = "api"
-    namespace = kubernetes_namespace.subscriptions.metadata[0].name
+    namespace = kubernetes_namespace.tidemill.metadata[0].name
 
     annotations = {
       "traefik.ingress.kubernetes.io/router.tls"            = "true"
@@ -409,7 +409,7 @@ resource "kubernetes_ingress_v1" "api" {
 
     tls {
       hosts       = [var.domain]
-      secret_name = "subscriptions-tls"
+      secret_name = "tidemill-tls"
     }
   }
 }

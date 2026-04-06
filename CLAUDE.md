@@ -8,12 +8,12 @@ Open-source subscription analytics engine — transparent, auditable metric comp
 
 **Current state:** Architecture documentation and deployment infrastructure are complete. Application source code has not been implemented yet.
 
-**Stack:** Python 3.11+ (subscriptions package) + PostgreSQL + Kafka/Redpanda + FastAPI + CLI.
+**Stack:** Python 3.11+ (tidemill package) + PostgreSQL + Kafka/Redpanda + FastAPI + CLI.
 
 ## Repository Structure
 
 ```
-subscriptions/
+tidemill/
 ├── CLAUDE.md                           # This file
 ├── README.md                           # Project overview
 ├── .env.example                        # Environment variables
@@ -43,7 +43,7 @@ subscriptions/
 │   └── terraform/
 │       ├── single-server/              # Hetzner single server (~€4/mo)
 │       └── kubernetes/                 # k3s HA cluster (~€33/mo)
-└── subscriptions/                      # Python package (TO BE IMPLEMENTED)
+└── tidemill/                           # Python package (TO BE IMPLEMENTED)
 ```
 
 ## Key Architecture Decisions
@@ -83,7 +83,7 @@ Start with `docs/architecture/overview.md` for the full system design. Key files
 ## Package Design (To Be Implemented)
 
 ```
-subscriptions/
+tidemill/
 ├── __init__.py              # Public API: MetricsEngine, connectors
 ├── engine.py                # MetricsEngine — routes queries to metrics
 ├── models.py                # SQLAlchemy models + Pydantic schemas
@@ -132,10 +132,10 @@ docker-compose down
 
 ```bash
 # No Docker required — just pip install and point to Lago's database
-pip install subscriptions
-export SUBSCRIPTIONS_DATABASE_URL=postgresql://lago:password@postgres/lago
-export SUBSCRIPTIONS_CONNECTOR=lago
-subscriptions mrr
+pip install tidemill
+export TIDEMILL_DATABASE_URL=postgresql://lago:password@postgres/lago
+export TIDEMILL_CONNECTOR=lago
+tidemill mrr
 ```
 
 ### Test Data
@@ -166,7 +166,7 @@ Copy `.env.example` to `.env` and configure:
 
 ### Adding a New Metric
 
-1. Create `subscriptions/metrics/mymetric.py`
+1. Create `tidemill/metrics/mymetric.py`
 2. Subclass `Metric`, implement `query()` (required) and optionally `handle_event()`, `register_tables()`
 3. Decorate with `@register`
 4. Document the formula, SQL, assumptions, and edge cases
@@ -174,12 +174,12 @@ Copy `.env.example` to `.env` and configure:
 ### Adding a New Billing Connector
 
 **Webhook connector** (for any billing system with webhooks):
-1. Create `subscriptions/connectors/myplatform.py`
+1. Create `tidemill/connectors/myplatform.py`
 2. Subclass `WebhookConnector`, implement `translate()` and optionally `backfill()`
 3. Decorate with `@register("myplatform")`
 
 **Database connector** (for billing engines with accessible databases):
-1. Create `subscriptions/connectors/myplatform.py`
+1. Create `tidemill/connectors/myplatform.py`
 2. Subclass `DatabaseConnector`, implement `get_mrr_cents()`, `get_subscription_changes()`, etc.
 3. Decorate with `@register("myplatform")`
 

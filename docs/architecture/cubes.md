@@ -757,12 +757,12 @@ GROUP BY m.movement_type, sub.plan_id
 
 ### File Location
 
-The cube machinery lives in `subscriptions/metrics/query.py` — the same file that metrics import from. The concrete cubes are defined alongside their metrics (e.g., `MRRSnapshotCube` in `subscriptions/metrics/mrr/cubes.py`).
+The cube machinery lives in `tidemill/metrics/query.py` — the same file that metrics import from. The concrete cubes are defined alongside their metrics (e.g., `MRRSnapshotCube` in `tidemill/metrics/mrr/cubes.py`).
 
 ### Package Structure
 
 ```
-subscriptions/metrics/
+tidemill/metrics/
 ├── __init__.py          # Metric base class + registry + QuerySpec
 ├── query.py             # Cube, QueryFragment, compilation
 ├── mrr/                 # MRRSnapshotCube, MRRMovementCube, MrrMetric

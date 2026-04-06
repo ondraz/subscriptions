@@ -1,0 +1,14 @@
+"""Connector framework — re-exports and auto-discovery."""
+
+# Auto-import built-in connectors so @register decorators fire.
+import tidemill.connectors.stripe as _stripe  # noqa: F401
+from tidemill.connectors.base import DatabaseConnector, WebhookConnector
+from tidemill.connectors.registry import discover_connectors, get_connector, register
+
+__all__ = [
+    "DatabaseConnector",
+    "WebhookConnector",
+    "discover_connectors",
+    "get_connector",
+    "register",
+]

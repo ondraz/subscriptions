@@ -3,13 +3,13 @@ services:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_DB: subscriptions
-      POSTGRES_USER: subscriptions
+      POSTGRES_DB: tidemill
+      POSTGRES_USER: tidemill
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U subscriptions"]
+      test: ["CMD-SHELL", "pg_isready -U tidemill"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -39,10 +39,10 @@ services:
       dockerfile: deploy/compose/Dockerfile
     restart: unless-stopped
     command: >
-      uv run uvicorn subscriptions.api.app:app
+      uv run uvicorn tidemill.api.app:app
       --host 0.0.0.0 --port 8000
     environment:
-      SUBSCRIPTIONS_DATABASE_URL: postgresql+asyncpg://subscriptions:${POSTGRES_PASSWORD}@postgres:5432/subscriptions
+      TIDEMILL_DATABASE_URL: postgresql+asyncpg://tidemill:${POSTGRES_PASSWORD}@postgres:5432/tidemill
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       STRIPE_API_KEY: ${STRIPE_API_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
@@ -65,9 +65,9 @@ services:
       context: ../../
       dockerfile: deploy/compose/Dockerfile
     restart: unless-stopped
-    command: uv run python -m subscriptions.worker
+    command: uv run python -m tidemill.worker
     environment:
-      SUBSCRIPTIONS_DATABASE_URL: postgresql+asyncpg://subscriptions:${POSTGRES_PASSWORD}@postgres:5432/subscriptions
+      TIDEMILL_DATABASE_URL: postgresql+asyncpg://tidemill:${POSTGRES_PASSWORD}@postgres:5432/tidemill
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
     depends_on:
       postgres:

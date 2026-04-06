@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from subscriptions.metrics.churn.metric import ChurnMetric
+from tidemill.metrics.churn.metric import ChurnMetric
 
 from .conftest import T1, T2, make_evt
 

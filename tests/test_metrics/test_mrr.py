@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from subscriptions.metrics.mrr.metric import MrrMetric
+from tidemill.metrics.mrr.metric import MrrMetric
 
 from .conftest import T1, T2, make_evt
 

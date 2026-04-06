@@ -31,18 +31,18 @@ runcmd:
     systemctl restart sshd
 
   # Clone repo and start services
-  - git clone https://github.com/ondraz/subscriptions.git /opt/subscriptions
-  - cd /opt/subscriptions/deploy/compose
+  - git clone https://github.com/ondraz/tidemill.git /opt/tidemill
+  - cd /opt/tidemill/deploy/compose
 
   # Generate secrets and write .env
   - |
-    cat > /opt/subscriptions/deploy/compose/.env <<EOF
+    cat > /opt/tidemill/deploy/compose/.env <<EOF
     POSTGRES_PASSWORD=$(openssl rand -hex 24)
     DOMAIN=${domain}
     EOF
 
   # Start services
-  - docker compose -f /opt/subscriptions/deploy/compose/docker-compose.yml up -d
+  - docker compose -f /opt/tidemill/deploy/compose/docker-compose.yml up -d
 
   # Enable automatic security updates
   - systemctl enable --now unattended-upgrades

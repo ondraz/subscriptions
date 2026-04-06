@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from subscriptions.connectors.stripe import StripeConnector
+from tidemill.connectors.stripe import StripeConnector
 
 SRC = "src_test"
 

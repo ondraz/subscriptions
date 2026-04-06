@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from subscriptions.events import Event, from_json, make_event_id, to_json
+from tidemill.events import Event, from_json, make_event_id, to_json
 
 
 class TestMakeEventId:

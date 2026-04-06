@@ -19,7 +19,7 @@ resource "hcloud_zone_rrset" "server_a" {
   name = local.subdomain
   type = "A"
   ttl  = 300
-  records = [{ value = hcloud_server.subscriptions.ipv4_address }]
+  records = [{ value = hcloud_server.tidemill.ipv4_address }]
 }
 
 resource "hcloud_zone_rrset" "server_aaaa" {
@@ -27,5 +27,5 @@ resource "hcloud_zone_rrset" "server_aaaa" {
   name = local.subdomain
   type = "AAAA"
   ttl  = 300
-  records = [{ value = hcloud_server.subscriptions.ipv6_address }]
+  records = [{ value = hcloud_server.tidemill.ipv6_address }]
 }

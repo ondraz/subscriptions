@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import text
 
-from subscriptions.events import Event, make_event_id
-from subscriptions.state import handle_state_event
+from tidemill.events import Event, make_event_id
+from tidemill.state import handle_state_event
 
 SRC = "src_1"
 NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)

@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 from sqlalchemy import text
 
-from subscriptions.metrics.retention.metric import RetentionMetric
+from tidemill.metrics.retention.metric import RetentionMetric
 
 from .conftest import SRC_PG, T0, T1, T2, make_evt
 

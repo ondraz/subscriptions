@@ -46,7 +46,7 @@ The seed script creates customers, subscriptions, and advances time through 3 mo
 
 ## Seed Script
 
-[`deploy/seed/stripe_seed.py`](https://github.com/ondraz/subscriptions/tree/main/deploy/seed/stripe_seed.py) generates a realistic dataset using Stripe Test Clocks.
+[`deploy/seed/stripe_seed.py`](https://github.com/ondraz/tidemill/tree/main/deploy/seed/stripe_seed.py) generates a realistic dataset using Stripe Test Clocks.
 
 ### What It Creates
 
@@ -290,12 +290,12 @@ For same-database mode, test data lives in Lago's PostgreSQL. No Kafka or webhoo
 
 ```bash
 # After populating Lago with test data:
-export SUBSCRIPTIONS_DATABASE_URL=postgresql://lago:password@localhost/lago
-export SUBSCRIPTIONS_CONNECTOR=lago
+export TIDEMILL_DATABASE_URL=postgresql://lago:password@localhost/lago
+export TIDEMILL_CONNECTOR=lago
 
-subscriptions mrr
-subscriptions churn --start 2025-12-01 --end 2026-01-01
-subscriptions summary
+tidemill mrr
+tidemill churn --start 2025-12-01 --end 2026-01-01
+tidemill summary
 ```
 
 No seed script is provided for Lago — use Lago's own API to create test data. The analytics engine is read-only against Lago's tables.

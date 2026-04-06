@@ -87,23 +87,23 @@ The most important events for metric computation.
 
 | Topic | Partition Key | Description |
 |-------|--------------|-------------|
-| `subscriptions.events` | `customer_id` | All internal events (single topic) |
-| `subscriptions.events.dlq` | `customer_id` | Dead letter queue for failed processing |
+| `tidemill.events` | `customer_id` | All internal events (single topic) |
+| `tidemill.events.dlq` | `customer_id` | Dead letter queue for failed processing |
 
 A single topic keeps event ordering simple. Consumers use the `type` field to filter.
 
-For high-volume deployments, events can be split into separate topics per entity type (`subscriptions.events.subscription`, `subscriptions.events.invoice`, etc.) at the cost of weaker cross-entity ordering guarantees.
+For high-volume deployments, events can be split into separate topics per entity type (`tidemill.events.subscription`, `tidemill.events.invoice`, etc.) at the cost of weaker cross-entity ordering guarantees.
 
 ## Consumer Groups
 
 | Group | Consumes | Purpose |
 |-------|----------|---------|
-| `subscriptions.state` | All events | Updates core PostgreSQL tables (current state) |
-| `subscriptions.metric.mrr` | `subscription.*` | MRR metric |
-| `subscriptions.metric.churn` | `subscription.*`, `customer.*` | Churn metric |
-| `subscriptions.metric.retention` | `subscription.*`, `customer.*` | Retention metric |
-| `subscriptions.metric.ltv` | `subscription.*`, `invoice.*`, `payment.*` | LTV metric |
-| `subscriptions.metric.trials` | `subscription.trial_*`, `subscription.activated` | Trials metric |
+| `tidemill.state` | All events | Updates core PostgreSQL tables (current state) |
+| `tidemill.metric.mrr` | `subscription.*` | MRR metric |
+| `tidemill.metric.churn` | `subscription.*`, `customer.*` | Churn metric |
+| `tidemill.metric.retention` | `subscription.*`, `customer.*` | Retention metric |
+| `tidemill.metric.ltv` | `subscription.*`, `invoice.*`, `payment.*` | LTV metric |
+| `tidemill.metric.trials` | `subscription.trial_*`, `subscription.activated` | Trials metric |
 
 Each metric runs in its own consumer group, so it maintains its own offset. This means:
 

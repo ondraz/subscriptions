@@ -1,16 +1,16 @@
 output "server_ipv4" {
   description = "Public IPv4 address of the server"
-  value       = hcloud_server.subscriptions.ipv4_address
+  value       = hcloud_server.tidemill.ipv4_address
 }
 
 output "server_ipv6" {
   description = "Public IPv6 address of the server"
-  value       = hcloud_server.subscriptions.ipv6_address
+  value       = hcloud_server.tidemill.ipv6_address
 }
 
 output "server_status" {
   description = "Server status"
-  value       = hcloud_server.subscriptions.status
+  value       = hcloud_server.tidemill.status
 }
 
 output "domain" {

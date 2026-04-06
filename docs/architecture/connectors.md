@@ -15,7 +15,7 @@ There are two types of connectors, matching the [dual architecture](overview.md)
 ```python
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
-from subscriptions.events import Event
+from tidemill.events import Event
 
 
 class WebhookConnector(ABC):
@@ -288,7 +288,7 @@ async def _paginate(self, list_fn, **params) -> AsyncIterator[dict]:
 curl -X POST localhost:8000/api/sources/{source_id}/backfill
 
 # Via CLI
-subscriptions backfill --source stripe
+tidemill backfill --source stripe
 
 # Programmatic
 async for event in stripe_connector.backfill(since=None):
@@ -421,7 +421,7 @@ Kill Bill can also operate in ingestion mode via `ExtBusEvent` webhooks:
 ## Connector Registry
 
 ```python
-from subscriptions.connectors import register, get_connector
+from tidemill.connectors import register, get_connector
 
 # Webhook connector (ingestion mode) — primary
 @register("stripe")
@@ -448,7 +448,7 @@ mrr = await lago.get_mrr_usd_cents()
 
 ### Webhook Connector (for any billing system with webhooks)
 
-1. Create `subscriptions/connectors/myplatform.py`
+1. Create `tidemill/connectors/myplatform.py`
 2. Subclass `WebhookConnector`
 3. Implement `translate()` and optionally `backfill()`
 4. Map each vendor webhook to the appropriate internal events
@@ -457,7 +457,7 @@ mrr = await lago.get_mrr_usd_cents()
 
 ### Database Connector (for billing engines with accessible databases)
 
-1. Create `subscriptions/connectors/myplatform.py`
+1. Create `tidemill/connectors/myplatform.py`
 2. Subclass `DatabaseConnector`
 3. Implement `get_active_subscriptions()`, `get_mrr_cents()`, `get_subscription_changes()`, etc.
 4. Write SQL queries against the billing engine's tables

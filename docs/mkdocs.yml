@@ -1,7 +1,7 @@
-site_name: Subscriptions
-site_url: https://ondraz.github.io/subscriptions/
-repo_url: https://github.com/ondraz/subscriptions
-repo_name: ondraz/subscriptions
+site_name: Tidemill
+site_url: https://ondraz.github.io/tidemill/
+repo_url: https://github.com/ondraz/tidemill
+repo_name: ondraz/tidemill
 
 docs_dir: .
 site_dir: ../site

@@ -5,9 +5,9 @@
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
 # Then start the API and worker from VS Code (or terminal):
-#   SUBSCRIPTIONS_DATABASE_URL=postgresql+asyncpg://subscriptions:test@localhost:5432/subscriptions \
+#   TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:test@localhost:5432/tidemill \
 #   KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
-#   uv run uvicorn subscriptions.api.app:app --host 0.0.0.0 --port 8000 --reload
+#   uv run uvicorn tidemill.api.app:app --host 0.0.0.0 --port 8000 --reload
 
 services:
   postgres:

@@ -19,7 +19,7 @@ Open-source subscription analytics with transparent, auditable, customizable met
 
 ## Design Principles
 
-1. **Metrics package first** — the core is a Python library (`subscriptions`), not a web app. FastAPI and CLI are thin facades. You can `import subscriptions` in a Jupyter notebook and query metrics directly.
+1. **Metrics package first** — the core is a Python library (`tidemill`), not a web app. FastAPI and CLI are thin facades. You can `import tidemill` in a Jupyter notebook and query metrics directly.
 2. **Stripe-first, dual architecture** — the primary integration path is **ingestion mode**: Stripe webhooks translated into internal events, published to Kafka, consumed by metrics. A secondary **same-database mode** is available for open-source billing engines (Lago, Kill Bill) that expose their PostgreSQL — zero ETL, but lower priority.
 3. **Metrics are self-contained** — each metric (MRR, churn, retention, ...) is a `Metric` subclass that declares its database tables, registers itself, and handles both event-driven and direct-query modes.
 4. **Transparent computation** — every metric has documented, auditable, forkable logic. Metric definitions are code: reviewable, contributable, no black boxes. This is the core differentiator vs. ChartMogul, Baremetrics, and ProfitWell.
@@ -35,7 +35,7 @@ The system supports two integration architectures, chosen per billing source:
 ```
 Billing System        Event Bus          Analytics Engine           Consumers
 ┌─────────┐ webhooks  ┌─────────┐       ┌──────────────────────┐
-│  Stripe ├──────────►│         │       │  subscriptions (Py)  │     ┌──────────┐
+│  Stripe ├──────────►│         │       │    tidemill (Py)     │     ┌──────────┐
 │         │           │  Kafka  ├──────►│                      ├────►│   CLI    │
 └─────────┘           │         │       │  ┌────────────────┐  │     └──────────┘
                       └─────────┘       │  │    Metrics     │  │     ┌──────────┐
@@ -63,7 +63,7 @@ This is the **primary integration path** — it works with any billing system th
 ```
 Billing Engine (Lago/Kill Bill)        Analytics Engine              Consumers
 ┌───────────────────────────┐       ┌──────────────────────┐
-│        PostgreSQL         │       │  subscriptions (Py)  │     ┌──────────┐
+│        PostgreSQL         │       │    tidemill (Py)     │     ┌──────────┐
 │  ┌─────────────────────┐  │       │                      ├────►│   CLI    │
 │  │ subscriptions, fees, │◄─ ─ ─ ─┤  ┌────────────────┐  │     └──────────┘
 │  │ invoices, customers  │  │ SQL  │  │    Metrics │  │     ┌──────────┐
@@ -89,7 +89,7 @@ For open-source billing engines that expose their PostgreSQL, this eliminates th
 ## Package Structure
 
 ```
-subscriptions/
+tidemill/
 ├── __init__.py              # Public API: MetricsEngine, connectors
 ├── engine.py                # MetricsEngine — routes queries to metrics
 ├── models.py                # SQLAlchemy models + Pydantic schemas

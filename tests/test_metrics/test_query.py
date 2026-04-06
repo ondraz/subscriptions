@@ -11,13 +11,13 @@ import re
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from subscriptions.metrics import QuerySpec
-from subscriptions.metrics.churn import ChurnEventCube
-from subscriptions.metrics.mrr import MRRMovementCube, MRRSnapshotCube
-from subscriptions.metrics.query import (
+from tidemill.metrics import QuerySpec
+from tidemill.metrics.churn import ChurnEventCube
+from tidemill.metrics.mrr import MRRMovementCube, MRRSnapshotCube
+from tidemill.metrics.query import (
     QueryFragment,
 )
-from subscriptions.metrics.retention import RetentionCohortCube
+from tidemill.metrics.retention import RetentionCohortCube
 
 
 def _sql(stmt) -> str:
@@ -62,7 +62,7 @@ class TestQueryFragmentAlgebra:
         assert (QueryFragment() + b).source == "table_b"
 
     def test_time_grain_takes_first_non_none(self):
-        from subscriptions.metrics.query import TimeGrainExpr
+        from tidemill.metrics.query import TimeGrainExpr
 
         tg1 = TimeGrainExpr("col1", "month")
         tg2 = TimeGrainExpr("col2", "day")
@@ -72,7 +72,7 @@ class TestQueryFragmentAlgebra:
         assert (QueryFragment() + b).time_grain == tg2
 
     def test_measures_accumulate(self):
-        from subscriptions.metrics.query import MeasureExpr
+        from tidemill.metrics.query import MeasureExpr
 
         m1 = MeasureExpr("sum", "x", "x")
         m2 = MeasureExpr("count", "y", "y")

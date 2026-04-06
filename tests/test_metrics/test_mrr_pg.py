@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from subscriptions.metrics.mrr.metric import MrrMetric
+from tidemill.metrics.mrr.metric import MrrMetric
 
 from .conftest import SRC_PG, T1, T2, T3, make_evt
 
@@ -24,7 +24,7 @@ class TestMrrPg:
     async def test_snapshot_and_movement(self, metric, pg_db):
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
             )
         )
@@ -56,7 +56,7 @@ class TestMrrPg:
         """Full MRR lifecycle on real PG."""
         await metric.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
             )
         )
@@ -111,7 +111,7 @@ class TestMrrPg:
 
     async def test_idempotent_replay(self, metric, pg_db):
         event = _e(
-            "subscription.created",
+            "subscription.activated",
             {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
         )
         await metric.handle_event(event)
@@ -124,19 +124,19 @@ class TestMrrPg:
 
     async def test_query_via_engine(self, pg_db):
         """Feed events then query MRR through MetricsEngine."""
-        from subscriptions.engine import MetricsEngine
+        from tidemill.engine import MetricsEngine
 
         m = MrrMetric()
         m.init(db=pg_db)
         await m.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_1", "mrr_cents": 5000, "currency": "USD"},
             )
         )
         await m.handle_event(
             _e(
-                "subscription.created",
+                "subscription.activated",
                 {"external_id": "sub_2", "mrr_cents": 3000, "currency": "USD"},
                 external_id="sub_2",
                 customer_id="cus_2",

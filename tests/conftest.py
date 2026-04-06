@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from subscriptions.models import metadata
+from tidemill.models import metadata
 
 # ── Fix Python 3.12+ sqlite3 datetime adapter deprecation ───────────────
 # aiosqlite triggers the deprecated default adapters; registering explicit

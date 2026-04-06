@@ -11,13 +11,13 @@ resource "hcloud_ssh_key" "default" {
 # Server
 # ---------------------------------------------------------------------------
 
-resource "hcloud_server" "subscriptions" {
+resource "hcloud_server" "tidemill" {
   name         = var.server_name
   server_type  = var.server_type
   image        = var.image
   location     = var.location
   ssh_keys     = [hcloud_ssh_key.default.id]
-  firewall_ids = [hcloud_firewall.subscriptions.id]
+  firewall_ids = [hcloud_firewall.tidemill.id]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
     domain             = var.domain
@@ -25,6 +25,6 @@ resource "hcloud_server" "subscriptions" {
   })
 
   labels = {
-    app = "subscriptions"
+    app = "tidemill"
   }
 }
