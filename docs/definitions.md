@@ -181,6 +181,85 @@ $$
 
 ---
 
+## Differences from ChartMogul
+
+Tidemill's definitions are broadly aligned with ChartMogul but diverge in several places. These are intentional choices — documented here so users migrating from ChartMogul know what to expect.
+
+### Logo Churn — same-period joiners
+
+ChartMogul excludes customers who both join and churn within the same reporting period from the churn numerator (they call this "Subscribed & Churned"). Tidemill counts them.
+
+$$
+\text{ChartMogul: } \text{Logo Churn Rate} = \frac{C_{\text{churned}} - C_{\text{joined\&churned}} - C_{\text{churned\&reactivated}}}{C_{\text{start}}}
+$$
+
+**Why we differ:** Tidemill's definition is simpler and counts every churn event. ChartMogul's exclusion prevents inflated churn rates in periods with high acquisition, but it also hides real losses. We may add this as a configurable option.
+
+### Revenue Churn Rate — gross vs net
+
+Tidemill defines Revenue Churn Rate as gross churn only ($|\text{Churn MRR}| / \text{MRR}_{\text{start}}$). ChartMogul defines two variants:
+
+- **Gross MRR Churn Rate** = $(|\text{Churn}| + |\text{Contraction}|) / \text{MRR}_{\text{start}}$ — includes contraction
+- **Net MRR Churn Rate** = $(\text{Churn} + \text{Contraction} - \text{Expansion}) / \text{MRR}_{\text{start}}$ — can go negative
+
+**Why we differ:** Tidemill separates churn from contraction at the movement level. Contraction and expansion are visible in the MRR waterfall. We may add gross/net MRR churn as explicit query variants.
+
+### Quick Ratio — reactivation
+
+Tidemill includes reactivation in the Quick Ratio numerator. ChartMogul does not.
+
+$$
+\text{Tidemill: } \frac{\text{New} + \text{Expansion} + \text{Reactivation}}{|\text{Churn}| + |\text{Contraction}|}
+$$
+
+$$
+\text{ChartMogul: } \frac{\text{New} + \text{Expansion}}{|\text{Churn}| + |\text{Contraction}|}
+$$
+
+**Why we differ:** Including reactivation gives a more complete picture of inflows vs outflows. ChartMogul treats reactivation as a separate category. Industry practice varies — neither is wrong.
+
+### LTV — trailing average
+
+Tidemill uses the current-period churn rate as the LTV denominator. ChartMogul uses a **6-month trailing average** of customer churn rate to smooth volatility.
+
+**Why we differ:** The trailing average is useful but opaque — it's unclear which months are included. Tidemill's approach is more transparent. We may add a configurable lookback window.
+
+### Trial Conversion — point-in-time vs retroactive
+
+Tidemill counts conversions that occur within the query period. ChartMogul uses a **retroactive cohort model**: a trial started in January that converts in March updates January's conversion rate.
+
+**Why we differ:** Point-in-time is simpler and stable (the number for a given period doesn't change). ChartMogul's approach gives a more accurate eventual conversion rate but means historical numbers keep changing.
+
+### Churn recognition timing
+
+Tidemill records churn when the subscription status changes. ChartMogul offers three configurable options:
+
+1. At cancellation (when the customer requests it)
+2. At end of service period (when access actually ends)
+3. When cancellation is scheduled
+
+**Why we differ:** Tidemill currently uses option 2 (status change at period end, driven by Stripe webhook events). Making this configurable is a potential future enhancement.
+
+### Cohort retention — revenue cohorts
+
+ChartMogul provides both customer retention and **Net MRR Retention per cohort** (tracking how a cohort's MRR evolves over time). Tidemill currently tracks customer retention per cohort only; revenue retention is available as a global NRR/GRR metric but not broken down by cohort.
+
+### Mid-period extrapolation
+
+ChartMogul projects incomplete periods using:
+
+$$
+\text{Projected Rate} = \frac{\text{Total Days in Period}}{\text{Days Elapsed}} \times \text{Actual Rate}
+$$
+
+Tidemill does not extrapolate — incomplete periods show actuals only.
+
+### ARR naming
+
+ChartMogul calls their metric **Annual Run Rate** (Annualized Run Rate), not Annual Recurring Revenue. The formula is identical ($\text{MRR} \times 12$). Tidemill uses the more common "Annual Recurring Revenue" name.
+
+---
+
 ## Conventions
 
 - **Money** is stored as integer cents (`BIGINT`). All amounts are dual-column: `*_cents` (original currency) and `*_base_cents` (converted to base currency at the daily FX rate). Aggregations use base currency by default; request the `currency` dimension for per-currency breakdowns.
