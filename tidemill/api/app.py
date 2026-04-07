@@ -64,6 +64,21 @@ app.include_router(webhooks.router, prefix="/api")
 app.include_router(metrics.router, prefix="/api")
 app.include_router(sources.router, prefix="/api")
 
+# Discover and mount per-metric routers
+from tidemill.metrics.registry import discover_metrics  # noqa: E402
+
+for _metric in discover_metrics():
+    if _metric.router is not None:
+        app.include_router(_metric.router, prefix="/api", tags=[f"metric:{_metric.name}"])
+
+# Discover and mount per-connector routers
+from tidemill.connectors.registry import get_registry  # noqa: E402
+
+for _conn_cls in get_registry().values():
+    _router = _conn_cls.router()
+    if _router is not None:
+        app.include_router(_router, prefix="/api")
+
 
 @app.get("/", include_in_schema=False)
 async def root() -> RedirectResponse:

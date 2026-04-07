@@ -36,3 +36,8 @@ def get_connector(name: str, *, source_id: str, config: dict[str, Any]) -> Webho
 def discover_connectors() -> list[str]:
     """Return names of all registered connectors."""
     return sorted(_REGISTRY)
+
+
+def get_registry() -> dict[str, type[WebhookConnector]]:
+    """Return the full connector registry (name → class)."""
+    return _REGISTRY

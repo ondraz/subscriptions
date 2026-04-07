@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator
     from datetime import datetime
 
+    from fastapi import APIRouter
+
     from tidemill.events import Event
 
 
@@ -22,6 +24,11 @@ class WebhookConnector(ABC):
     @property
     @abstractmethod
     def source_type(self) -> str: ...
+
+    @classmethod
+    def router(cls) -> APIRouter | None:
+        """Optional FastAPI router for this connector's webhook endpoint."""
+        return None
 
     @abstractmethod
     def translate(self, webhook_payload: dict[str, Any]) -> list[Event]: ...

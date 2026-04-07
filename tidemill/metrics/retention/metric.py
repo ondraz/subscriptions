@@ -14,6 +14,8 @@ from tidemill.metrics.retention.cubes import RetentionCohortCube
 if TYPE_CHECKING:
     from datetime import date
 
+    from fastapi import APIRouter
+
     from tidemill.events import Event
 
 
@@ -21,6 +23,12 @@ if TYPE_CHECKING:
 class RetentionMetric(Metric):
     name = "retention"
     model = RetentionCohortCube
+
+    @property
+    def router(self) -> APIRouter:
+        from tidemill.metrics.retention.routes import router
+
+        return router
 
     @property
     def dependencies(self) -> list[str]:

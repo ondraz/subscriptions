@@ -54,45 +54,29 @@ async def run_worker() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, _signal_handler)
 
-    tasks = [
+    from tidemill.metrics.registry import discover_metrics
+
+    tasks: list[asyncio.Task[None]] = [
         asyncio.create_task(
             _consume_state(kafka_url, factory, dlq, stop),
             name="state",
         ),
-        asyncio.create_task(
-            _consume_metric(
-                kafka_url,
-                "tidemill.metric.mrr",
-                "mrr",
-                factory,
-                dlq,
-                stop,
-            ),
-            name="metric.mrr",
-        ),
-        asyncio.create_task(
-            _consume_metric(
-                kafka_url,
-                "tidemill.metric.churn",
-                "churn",
-                factory,
-                dlq,
-                stop,
-            ),
-            name="metric.churn",
-        ),
-        asyncio.create_task(
-            _consume_metric(
-                kafka_url,
-                "tidemill.metric.retention",
-                "retention",
-                factory,
-                dlq,
-                stop,
-            ),
-            name="metric.retention",
-        ),
     ]
+    for metric in discover_metrics():
+        if metric.event_types:
+            tasks.append(
+                asyncio.create_task(
+                    _consume_metric(
+                        kafka_url,
+                        f"tidemill.metric.{metric.name}",
+                        metric.name,
+                        factory,
+                        dlq,
+                        stop,
+                    ),
+                    name=f"metric.{metric.name}",
+                )
+            )
 
     logger.info("Worker started with %d consumer tasks", len(tasks))
     await stop.wait()

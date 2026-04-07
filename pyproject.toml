@@ -70,6 +70,9 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH"]
 
 [tool.ruff.lint.per-file-ignores]
 "tidemill/api/routers/*.py" = ["B008", "TCH003"]
+"tidemill/metrics/*/routes.py" = ["B008", "TCH003"]
+"tidemill/metrics/route_helpers.py" = ["B008"]
+"tidemill/connectors/*/routes.py" = ["B008", "TCH003"]
 "tidemill/cli/*.py" = ["B008"]
 
 [tool.mypy]

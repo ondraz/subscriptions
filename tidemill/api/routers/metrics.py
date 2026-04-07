@@ -1,39 +1,15 @@
-"""Metric query endpoints."""
+"""Generic metric endpoints (list + query-by-body)."""
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
 from tidemill.metrics.base import QuerySpec
+from tidemill.metrics.route_helpers import query_metric
 
 router = APIRouter(tags=["metrics"])
-
-
-def _parse_spec(
-    dimensions: list[str] = Query(default=[]),
-    filter: list[str] = Query(default=[]),
-    granularity: str | None = None,
-) -> QuerySpec | None:
-    filters: dict[str, Any] = {}
-    for f in filter:
-        key, _, value = f.partition("=")
-        filters[key] = value
-    if not dimensions and not filters and not granularity:
-        return None
-    return QuerySpec(dimensions=dimensions, filters=filters, granularity=granularity)
-
-
-async def _query(metric: str, params: dict[str, Any], spec: QuerySpec | None) -> Any:
-    from tidemill.api.app import app
-    from tidemill.engine import MetricsEngine
-
-    factory = app.state.session_factory
-    async with factory() as session:
-        engine = MetricsEngine(db=session)
-        return await engine.query(metric, params, spec)
 
 
 @router.get("/metrics")
@@ -43,87 +19,8 @@ async def list_metrics() -> list[str]:
     return sorted(m.name for m in discover_metrics())
 
 
-@router.get("/metrics/mrr")
-async def get_mrr(
-    at: date | None = None,
-    start: date | None = None,
-    end: date | None = None,
-    interval: str = "month",
-    dimensions: list[str] = Query(default=[]),
-    filter: list[str] = Query(default=[]),
-    granularity: str | None = None,
-) -> Any:
-    spec = _parse_spec(dimensions, filter, granularity)
-    if start and end:
-        params = {"query_type": "series", "start": start, "end": end, "interval": interval}
-    else:
-        params = {"query_type": "current", "at": at}
-    return await _query("mrr", params, spec)
-
-
-@router.get("/metrics/mrr/breakdown")
-async def get_mrr_breakdown(
-    start: date = Query(...),
-    end: date = Query(...),
-    dimensions: list[str] = Query(default=[]),
-    filter: list[str] = Query(default=[]),
-    granularity: str | None = None,
-) -> Any:
-    spec = _parse_spec(dimensions, filter, granularity)
-    return await _query("mrr", {"query_type": "breakdown", "start": start, "end": end}, spec)
-
-
-@router.get("/metrics/mrr/waterfall")
-async def get_mrr_waterfall(
-    start: date = Query(...),
-    end: date = Query(...),
-    dimensions: list[str] = Query(default=[]),
-    filter: list[str] = Query(default=[]),
-    granularity: str | None = None,
-) -> Any:
-    spec = _parse_spec(dimensions, filter, granularity)
-    return await _query("mrr", {"query_type": "waterfall", "start": start, "end": end}, spec)
-
-
-@router.get("/metrics/arr")
-async def get_arr(
-    at: date | None = None,
-    dimensions: list[str] = Query(default=[]),
-    filter: list[str] = Query(default=[]),
-    granularity: str | None = None,
-) -> Any:
-    spec = _parse_spec(dimensions, filter, granularity)
-    return await _query("mrr", {"query_type": "arr", "at": at}, spec)
-
-
-@router.get("/metrics/churn")
-async def get_churn(
-    start: date = Query(...),
-    end: date = Query(...),
-    type: str = "logo",
-    dimensions: list[str] = Query(default=[]),
-    filter: list[str] = Query(default=[]),
-    granularity: str | None = None,
-) -> Any:
-    spec = _parse_spec(dimensions, filter, granularity)
-    return await _query("churn", {"start": start, "end": end, "type": type}, spec)
-
-
-@router.get("/metrics/retention")
-async def get_retention(
-    start: date = Query(...),
-    end: date = Query(...),
-    query_type: str = "cohort_matrix",
-    dimensions: list[str] = Query(default=[]),
-    filter: list[str] = Query(default=[]),
-    granularity: str | None = None,
-) -> Any:
-    spec = _parse_spec(dimensions, filter, granularity)
-    return await _query("retention", {"query_type": query_type, "start": start, "end": end}, spec)
-
-
 @router.post("/metrics/{metric}")
-async def query_metric(
+async def post_query_metric(
     metric: str,
     body: dict[str, Any],
 ) -> Any:
@@ -139,4 +36,4 @@ async def query_metric(
             filters=s.filters,
             granularity=s.granularity,
         )
-    return await _query(metric, params, spec)
+    return await query_metric(metric, params, spec)

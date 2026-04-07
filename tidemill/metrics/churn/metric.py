@@ -14,6 +14,8 @@ from tidemill.metrics.registry import register
 if TYPE_CHECKING:
     from datetime import date
 
+    from fastapi import APIRouter
+
     from tidemill.events import Event
 
 
@@ -22,6 +24,12 @@ class ChurnMetric(Metric):
     name = "churn"
     event_model = ChurnEventCube
     state_model = ChurnCustomerStateCube
+
+    @property
+    def router(self) -> APIRouter:
+        from tidemill.metrics.churn.routes import router
+
+        return router
 
     @property
     def event_types(self) -> list[str]:

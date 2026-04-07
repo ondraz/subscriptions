@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from fastapi import APIRouter
     from sqlalchemy import MetaData
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,6 +56,11 @@ class Metric(ABC):
         """Inject runtime dependencies.  Called by the engine after construction."""
         self.db = db
         self.deps = deps or {}
+
+    @property
+    def router(self) -> APIRouter | None:
+        """Optional FastAPI router for this metric's endpoints."""
+        return None
 
     @property
     def event_types(self) -> list[str]:

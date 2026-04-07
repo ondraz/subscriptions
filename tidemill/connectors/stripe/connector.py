@@ -14,6 +14,8 @@ from tidemill.events import Event, make_event_id
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
 
+    from fastapi import APIRouter
+
 
 def _ts(unix_ts: int | None) -> str | None:
     """Convert a Unix timestamp to ISO 8601, or *None*."""
@@ -29,6 +31,12 @@ class StripeConnector(WebhookConnector):
     @property
     def source_type(self) -> str:
         return "stripe"
+
+    @classmethod
+    def router(cls) -> APIRouter:
+        from tidemill.connectors.stripe.routes import router
+
+        return router
 
     # ── translate ────────────────────────────────────────────────────────
 
