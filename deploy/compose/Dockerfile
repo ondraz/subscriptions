@@ -7,7 +7,7 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --legacy-peer-deps
 COPY frontend/ ./
-RUN npm run build
+RUN npx vite build
 
 # ── Stage 2: Python application (API only — no frontend assets) ─────────
 FROM python:3.13-slim AS api
