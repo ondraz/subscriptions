@@ -1,6 +1,15 @@
-import { BarChart } from '@tremor/react'
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts'
 
-const TREMOR_COLORS = ['blue', 'violet', 'emerald', 'amber', 'red', 'cyan', 'pink']
+const COLORS = ['#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#06b6d4', '#ec4899']
 
 interface BarBreakdownChartProps {
   data: Array<Record<string, unknown>>
@@ -20,23 +29,29 @@ export function BarBreakdownChart({
   stacked,
 }: BarBreakdownChartProps) {
   if (loading) {
-    return <div className="h-64 flex items-center justify-center text-tremor-content">Loading...</div>
+    return <div className="h-64 flex items-center justify-center text-muted-foreground">Loading...</div>
   }
   if (!data || data.length === 0) {
-    return <div className="h-64 flex items-center justify-center text-tremor-content">No data</div>
+    return <div className="h-64 flex items-center justify-center text-muted-foreground">No data</div>
   }
 
   return (
-    <BarChart
-      data={data}
-      index={xKey}
-      categories={bars}
-      colors={bars.map((_, i) => TREMOR_COLORS[i % TREMOR_COLORS.length])}
-      valueFormatter={formatter}
-      yAxisWidth={80}
-      stack={stacked}
-      className="h-72"
-      showAnimation
-    />
+    <ResponsiveContainer width="100%" height={288}>
+      <BarChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
+        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+        <XAxis dataKey={xKey} tick={{ fontSize: 12 }} />
+        <YAxis width={80} tickFormatter={formatter} tick={{ fontSize: 12 }} />
+        <Tooltip formatter={(v) => formatter ? formatter(Number(v)) : v} />
+        {bars.length > 1 && <Legend />}
+        {bars.map((key, i) => (
+          <Bar
+            key={key}
+            dataKey={key}
+            fill={COLORS[i % COLORS.length]}
+            stackId={stacked ? 'stack' : undefined}
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
   )
 }
