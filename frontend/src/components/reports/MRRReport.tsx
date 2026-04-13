@@ -15,7 +15,7 @@ import type { WaterfallEntry } from '@/lib/types'
 
 interface MRRSeriesRow {
   period: string
-  amount: number
+  amount_base: string
 }
 
 export function MRRReport() {
@@ -37,11 +37,13 @@ export function MRRReport() {
 
   // Compute cumulative MRR levels from movements, filter to visible range
   const mrrOverTime = useMemo(() => {
-    if (!mrrSeries) return []
+    if (!mrrSeries || mrrSeries.length === 0) return []
+    // Sort by period ascending and compute running sum
+    const sorted = [...mrrSeries].sort((a, b) => a.period.localeCompare(b.period))
     let level = 0
-    const all = mrrSeries.map((row) => {
-      level += row.amount / 100
-      return { date: row.period, mrr: level }
+    const all = sorted.map((row) => {
+      level += Number(row.amount_base) / 100
+      return { date: row.period.slice(0, 10), mrr: level }
     })
     return all.filter((pt) => pt.date >= start)
   }, [mrrSeries, start])
