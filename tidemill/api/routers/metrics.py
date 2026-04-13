@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter
 
 from tidemill.metrics.base import QuerySpec
-from tidemill.metrics.route_helpers import query_metric
+from tidemill.metrics.route_helpers import coerce_numerics, query_metric
 
 router = APIRouter(tags=["metrics"])
 
@@ -30,13 +31,34 @@ async def get_summary() -> dict[str, Any]:
         engine = MetricsEngine(db=session)
         result: dict[str, Any] = {}
 
+        today = date.today()
+        period_start = today.replace(day=1) - timedelta(days=1)
+        period_start = period_start.replace(day=1)  # first of previous month
+
         queries: dict[str, tuple[str, dict[str, Any]]] = {
             "mrr": ("mrr", {"query_type": "current"}),
             "arr": ("mrr", {"query_type": "arr"}),
-            "churn": ("churn", {"query_type": "current"}),
-            "retention": ("retention", {"query_type": "current"}),
-            "ltv": ("ltv", {"query_type": "current"}),
-            "trials": ("trials", {"query_type": "current"}),
+            "logo_churn_rate": (
+                "churn",
+                {"start": period_start, "end": today, "type": "logo"},
+            ),
+            "revenue_churn_rate": (
+                "churn",
+                {"start": period_start, "end": today, "type": "revenue"},
+            ),
+            "nrr": (
+                "retention",
+                {"query_type": "nrr", "start": period_start, "end": today},
+            ),
+            "ltv": (
+                "ltv",
+                {"query_type": "simple", "start": period_start, "end": today},
+            ),
+            "arpu": ("ltv", {"query_type": "arpu"}),
+            "trial_conversion_rate": (
+                "trials",
+                {"query_type": "conversion_rate", "start": period_start, "end": today},
+            ),
         }
 
         for key, (metric, params) in queries.items():
@@ -49,7 +71,27 @@ async def get_summary() -> dict[str, Any]:
             except Exception:
                 result[key] = None
 
-        return result
+        # Derive active_customers from MRR snapshot count
+        try:
+            from tidemill.metrics.mrr.cubes import MRRSnapshotCube
+
+            m = MRRSnapshotCube
+            q = m.measures.count + m.where("s.mrr_base_cents", ">", 0)
+            stmt, params = q.compile(m)
+            r = await session.execute(stmt, params)
+            row = r.mappings().first()
+            result["active_customers"] = row["subscription_count"] if row else 0
+        except Exception:
+            result["active_customers"] = None
+
+        # Quick ratio = (new + expansion + reactivation) / (contraction + churn)
+        mrr_val = result.get("mrr")
+        if mrr_val and mrr_val > 0:
+            result["quick_ratio"] = None  # needs waterfall data; leave for now
+        else:
+            result["quick_ratio"] = None
+
+        return coerce_numerics(result)
 
 
 @router.post("/metrics/{metric}")

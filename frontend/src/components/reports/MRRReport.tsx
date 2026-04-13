@@ -15,7 +15,7 @@ import type { WaterfallEntry } from '@/lib/types'
 
 interface MRRSeriesRow {
   period: string
-  amount_base: string
+  amount_base: number
 }
 
 export function MRRReport() {
@@ -42,7 +42,7 @@ export function MRRReport() {
     const sorted = [...mrrSeries].sort((a, b) => a.period.localeCompare(b.period))
     let level = 0
     const all = sorted.map((row) => {
-      level += Number(row.amount_base) / 100
+      level += row.amount_base / 100
       return { date: row.period.slice(0, 10), mrr: level }
     })
     return all.filter((pt) => pt.date >= start)
@@ -54,7 +54,7 @@ export function MRRReport() {
   const breakdownMap = new Map(
     (breakdown ?? []).map((row) => [
       String(row.movement_type ?? '').toLowerCase(),
-      (Number(row.amount_base) || 0) / 100,
+      (row.amount_base || 0) / 100,
     ])
   )
   const breakdownData = MOVEMENT_TYPES.map((type) => ({

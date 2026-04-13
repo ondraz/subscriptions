@@ -190,6 +190,8 @@ async def get_mrr(
 
 When `start` and `end` are provided, the endpoint returns a time series. Otherwise it returns a single value.
 
+**Monetary values:** All monetary amounts are returned as **integer cents** (e.g., `$12.50` → `1250`). Divide by 100 in the client to display as dollars. This matches the internal storage convention (`*_cents` / `*_base_cents` columns) and avoids floating-point precision issues.
+
 ### Data
 
 | Method | Path | Returns |

@@ -1,24 +1,41 @@
 import { useTimeRange } from '@/hooks/useTimeRange'
-import { useTrials } from '@/hooks/useMetrics'
+import { useMetric } from '@/hooks/useMetrics'
 import { KPICard } from '@/components/charts/KPICard'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
 import { TimeRangePicker } from '@/components/controls/TimeRangePicker'
 import { formatPercent, formatNumber } from '@/lib/formatters'
-import type { TimeSeriesPoint } from '@/lib/types'
 
-interface TrialsData {
-  conversion_rate?: number
-  started?: number
-  converted?: number
-  expired?: number
-  series?: TimeSeriesPoint[]
+interface TrialFunnel {
+  conversion_rate: number | null
+  started: number
+  converted: number
+  expired: number
+}
+
+interface TrialSeriesRow {
+  period: string
+  started: number
+  converted: number
+  expired: number
+  conversion_rate: number | null
 }
 
 export function TrialsReport() {
   const { start, end, interval, setRange } = useTimeRange({ range: 'last_1y' })
 
-  const { data, isLoading } = useTrials<TrialsData>({ start, end, interval })
+  const { data: funnel, isLoading: funnelLoading } = useMetric<TrialFunnel>(
+    '/api/metrics/trials/funnel', { start, end },
+  )
+  const { data: rawSeries, isLoading: seriesLoading } = useMetric<TrialSeriesRow[]>(
+    '/api/metrics/trials/series', { start, end, interval },
+  )
+
+  // Transform series: period → date
+  const seriesData = (Array.isArray(rawSeries) ? rawSeries : []).map((row) => ({
+    date: String(row.period ?? '').slice(0, 10),
+    conversion_rate: row.conversion_rate,
+  }))
 
   return (
     <div className="space-y-4">
@@ -33,23 +50,23 @@ export function TrialsReport() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard
           title="Conversion Rate"
-          value={data?.conversion_rate != null ? formatPercent(data.conversion_rate) : '—'}
-          loading={isLoading}
+          value={funnel?.conversion_rate != null ? formatPercent(funnel.conversion_rate) : '—'}
+          loading={funnelLoading}
         />
         <KPICard
           title="Started"
-          value={data?.started != null ? formatNumber(data.started) : '—'}
-          loading={isLoading}
+          value={funnel?.started != null ? formatNumber(funnel.started) : '—'}
+          loading={funnelLoading}
         />
         <KPICard
           title="Converted"
-          value={data?.converted != null ? formatNumber(data.converted) : '—'}
-          loading={isLoading}
+          value={funnel?.converted != null ? formatNumber(funnel.converted) : '—'}
+          loading={funnelLoading}
         />
         <KPICard
           title="Expired"
-          value={data?.expired != null ? formatNumber(data.expired) : '—'}
-          loading={isLoading}
+          value={funnel?.expired != null ? formatNumber(funnel.expired) : '—'}
+          loading={funnelLoading}
         />
       </div>
 
@@ -58,18 +75,18 @@ export function TrialsReport() {
         chartConfig={{
           name: 'Trial Conversion Rate',
           metric: 'trials',
-          endpoint: '/api/metrics/trials',
+          endpoint: '/api/metrics/trials/series',
           params: { start, end, interval },
           chartType: 'line',
           timeRangeMode: 'fixed',
         }}
       >
         <TimeSeriesChart
-          data={data?.series ?? []}
+          data={seriesData}
           dataKey="conversion_rate"
           formatter={formatPercent}
           color="#7c3aed"
-          loading={isLoading}
+          loading={seriesLoading}
         />
       </ChartContainer>
     </div>

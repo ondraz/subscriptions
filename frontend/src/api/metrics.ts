@@ -9,6 +9,7 @@ export interface MetricParams {
   dimensions?: string[]
   filters?: Record<string, string>
   type?: string
+  query_type?: string
 }
 
 function buildQuery(params: MetricParams): string {
@@ -18,6 +19,7 @@ function buildQuery(params: MetricParams): string {
   if (params.at) sp.set('at', params.at)
   if (params.interval) sp.set('interval', params.interval)
   if (params.type) sp.set('type', params.type)
+  if (params.query_type) sp.set('query_type', params.query_type)
   params.dimensions?.forEach((d) => sp.append('dimensions', d))
   if (params.filters) {
     for (const [k, v] of Object.entries(params.filters)) {

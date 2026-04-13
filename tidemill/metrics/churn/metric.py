@@ -45,7 +45,29 @@ class ChurnMetric(Metric):
         p = event.payload
 
         match event.type:
-            case "subscription.created" | "subscription.activated" | "subscription.reactivated":
+            case "subscription.created":
+                # Ensure customer row exists but don't increment counter.
+                # The counter is incremented by subscription.activated —
+                # created + activated both fire for the same sub, so
+                # incrementing on both would inflate the count.
+                await self.db.execute(
+                    text(
+                        "INSERT INTO metric_churn_customer_state"
+                        " (id, source_id, customer_id, active_subscriptions,"
+                        "  first_active_at)"
+                        " VALUES (:id, :src, :cid, 0, :now)"
+                        " ON CONFLICT ON CONSTRAINT uq_churn_state_customer"
+                        " DO NOTHING"
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "src": event.source_id,
+                        "cid": event.customer_id,
+                        "now": event.occurred_at,
+                    },
+                )
+
+            case "subscription.activated" | "subscription.reactivated":
                 await self.db.execute(
                     text(
                         "INSERT INTO metric_churn_customer_state"
@@ -207,7 +229,7 @@ class ChurnMetric(Metric):
 
         if active_start == 0:
             return None
-        return churned / active_start
+        return float(churned) / float(active_start)
 
     async def _revenue_churn(
         self,
@@ -215,7 +237,7 @@ class ChurnMetric(Metric):
         end: date,
         spec: QuerySpec | None,
     ) -> Any:
-        from tidemill.metrics.mrr.cubes import MRRMovementCube, MRRSnapshotCube
+        from tidemill.metrics.mrr.cubes import MRRMovementCube
 
         mm = MRRMovementCube
 
@@ -237,14 +259,15 @@ class ChurnMetric(Metric):
 
         churn_amount = abs(rows[0]["amount_base"]) if rows and rows[0]["amount_base"] else 0
 
-        # Denominator: MRR at period start
-        sm = MRRSnapshotCube
-        dq = sm.measures.mrr + sm.filter("snapshot_at", "<", start)
-        dstmt, dparams = dq.compile(sm)
+        # Denominator: MRR at period start = cumulative sum of all movements
+        # before the start date (snapshot table only stores current state,
+        # not point-in-time, so churned subs fall out of the query).
+        dq = mm.measures.amount + mm.filter("occurred_at", "<", start)
+        dstmt, dparams = dq.compile(mm)
         dresult = await self.db.execute(dstmt, dparams)
         drows = dresult.mappings().all()
-        start_mrr = drows[0]["mrr"] if drows and drows[0]["mrr"] else 0
+        start_mrr = float(drows[0]["amount_base"] or 0) if drows else 0
 
         if start_mrr == 0:
             return None
-        return churn_amount / start_mrr
+        return float(churn_amount) / float(start_mrr)

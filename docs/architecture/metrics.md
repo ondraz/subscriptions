@@ -363,14 +363,14 @@ async def _current_mrr(self, at: date | None, spec: QuerySpec | None):
 
 No spec — plain aggregate:
 ```sql
-SELECT SUM(s.mrr_base_cents) / 100.0 AS mrr
+SELECT SUM(s.mrr_base_cents) AS mrr
 FROM metric_mrr_snapshot s
 WHERE s.mrr_base_cents > 0
 ```
 
 `QuerySpec(filters={"plan_interval": {"in": ["yearly"]}})` — filter only, no dimensions:
 ```sql
-SELECT SUM(s.mrr_base_cents) / 100.0 AS mrr
+SELECT SUM(s.mrr_base_cents) AS mrr
 FROM metric_mrr_snapshot s
   JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
   JOIN plan p ON p.id = sub.plan_id
@@ -382,7 +382,7 @@ WHERE s.mrr_base_cents > 0
 ```sql
 SELECT p.interval AS plan_interval,
        c.country AS customer_country,
-       SUM(s.mrr_base_cents) / 100.0 AS mrr
+       SUM(s.mrr_base_cents) AS mrr
 FROM metric_mrr_snapshot s
   JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
   JOIN plan p ON p.id = sub.plan_id
@@ -394,7 +394,7 @@ GROUP BY p.interval, c.country
 `QuerySpec(filters={"customer_country": {"in": ["US", "DE"]}}, dimensions=["plan_id"])` — filter + dimension:
 ```sql
 SELECT sub.plan_id,
-       SUM(s.mrr_base_cents) / 100.0 AS mrr
+       SUM(s.mrr_base_cents) AS mrr
 FROM metric_mrr_snapshot s
   JOIN subscription sub ON sub.source_id = s.source_id AND sub.external_id = s.subscription_id
   JOIN customer c ON c.source_id = s.source_id AND c.external_id = s.customer_id
@@ -427,7 +427,7 @@ async def _mrr_breakdown(self, start: date, end: date, spec: QuerySpec | None):
 ```sql
 SELECT m.movement_type,
        sub.plan_id,
-       SUM(m.amount_base_cents) / 100.0 AS amount_base
+       SUM(m.amount_base_cents) AS amount_base
 FROM metric_mrr_movement m
   JOIN subscription sub ON sub.source_id = m.source_id AND sub.external_id = m.subscription_id
 WHERE m.occurred_at BETWEEN :start AND :end
@@ -473,7 +473,7 @@ The movement query SQL (step 2):
 ```sql
 SELECT date_trunc('month', m.occurred_at) AS period,
        m.movement_type,
-       SUM(m.amount_base_cents) / 100.0 AS amount_base
+       SUM(m.amount_base_cents) AS amount_base
 FROM metric_mrr_movement m
 WHERE m.occurred_at BETWEEN :start AND :end
 GROUP BY period, m.movement_type
