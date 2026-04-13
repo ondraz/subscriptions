@@ -10,8 +10,13 @@ import { TimeRangePicker } from '@/components/controls/TimeRangePicker'
 import { DimensionPicker } from '@/components/controls/DimensionPicker'
 import { formatCurrency } from '@/lib/formatters'
 import { MRR_DIMENSIONS } from '@/lib/constants'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { WaterfallEntry } from '@/lib/types'
+
+interface MRRSeriesRow {
+  period: string
+  amount: number
+}
 
 export function MRRReport() {
   const { start, end, interval, setRange } = useTimeRange({ range: 'last_1y' })
@@ -23,11 +28,23 @@ export function MRRReport() {
   const { data: currentMrr, isLoading: mrrLoading } = useMRR<number>({})
   const { data: currentArr, isLoading: arrLoading } = useMetric<number>('/api/metrics/arr', {})
 
-  // Derive MRR Over Time from waterfall ending_mrr (cents → dollars)
-  const mrrOverTime = (waterfall ?? []).map((row) => ({
-    date: row.month + '-01',
-    mrr: row.ending_mrr / 100,
-  }))
+  // Fetch MRR movements from beginning of time so cumulative sum = MRR level
+  const { data: mrrSeries, isLoading: seriesLoading } = useMRR<MRRSeriesRow[]>({
+    start: '2000-01-01',
+    end,
+    interval,
+  })
+
+  // Compute cumulative MRR levels from movements, filter to visible range
+  const mrrOverTime = useMemo(() => {
+    if (!mrrSeries) return []
+    let level = 0
+    const all = mrrSeries.map((row) => {
+      level += row.amount / 100
+      return { date: row.period, mrr: level }
+    })
+    return all.filter((pt) => pt.date >= start)
+  }, [mrrSeries, start])
 
   // Transform breakdown: API returns {movement_type, amount_base} in cents
   // Ensure all 5 movement types are present (including reactivation)
@@ -79,8 +96,8 @@ export function MRRReport() {
         chartConfig={{
           name: 'MRR Over Time',
           metric: 'mrr',
-          endpoint: '/api/metrics/mrr/waterfall',
-          params: { start, end },
+          endpoint: '/api/metrics/mrr',
+          params: { start, end, interval },
           chartType: 'line',
           timeRangeMode: 'fixed',
         }}
@@ -89,7 +106,7 @@ export function MRRReport() {
           data={mrrOverTime}
           dataKey="mrr"
           formatter={formatCurrency}
-          loading={waterfallLoading}
+          loading={seriesLoading}
         />
       </ChartContainer>
 
@@ -99,8 +116,7 @@ export function MRRReport() {
           name: 'MRR Breakdown',
           metric: 'mrr',
           endpoint: '/api/metrics/mrr/breakdown',
-          params: { start, end, interval },
-          dimensions,
+          params: { start, end },
           chartType: 'bar',
           timeRangeMode: 'fixed',
         }}
