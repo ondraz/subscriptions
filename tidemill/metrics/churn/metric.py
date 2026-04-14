@@ -197,11 +197,12 @@ class ChurnMetric(Metric):
     ) -> Any:
         em = self.event_model
 
-        # Numerator: customers who churned in the period
+        # Numerator: logo churn events scoped to customers active at period start
         q = (
             em.measures.count
             + em.filter("churn_type", "=", "logo")
             + em.filter("occurred_at", "between", (start, end))
+            + em.filter("customer_first_active", "<", start)
         )
         if spec:
             q = q + em.apply_spec(spec)
@@ -237,31 +238,31 @@ class ChurnMetric(Metric):
         end: date,
         spec: QuerySpec | None,
     ) -> Any:
-        from tidemill.metrics.mrr.cubes import MRRMovementCube
+        em = self.event_model
 
-        mm = MRRMovementCube
-
-        # Numerator: absolute churn amount in the period
+        # Numerator: churned MRR scoped to customers active at period start
         q = (
-            mm.measures.amount
-            + mm.filter("movement_type", "=", "churn")
-            + mm.filter("occurred_at", "between", (start, end))
+            em.measures.revenue_lost
+            + em.filter("churn_type", "=", "revenue")
+            + em.filter("occurred_at", "between", (start, end))
+            + em.filter("customer_first_active", "<", start)
         )
         if spec:
-            q = q + mm.apply_spec(spec)
+            q = q + em.apply_spec(spec)
 
-        stmt, params = q.compile(mm)
+        stmt, params = q.compile(em)
         result = await self.db.execute(stmt, params)
         rows = result.mappings().all()
 
         if spec and spec.dimensions:
             return [dict(r) for r in rows]
 
-        churn_amount = abs(rows[0]["amount_base"]) if rows and rows[0]["amount_base"] else 0
+        churn_amount = abs(float(rows[0]["revenue_lost"] or 0)) if rows else 0
 
-        # Denominator: MRR at period start = cumulative sum of all movements
-        # before the start date (snapshot table only stores current state,
-        # not point-in-time, so churned subs fall out of the query).
+        # Denominator: MRR at period start = cumulative movements before start
+        from tidemill.metrics.mrr.cubes import MRRMovementCube
+
+        mm = MRRMovementCube
         dq = mm.measures.amount + mm.filter("occurred_at", "<", start)
         dstmt, dparams = dq.compile(mm)
         dresult = await self.db.execute(dstmt, dparams)

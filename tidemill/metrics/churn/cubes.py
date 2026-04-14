@@ -54,6 +54,11 @@ class ChurnEventCube(Cube):
             alias="c",
             on="c.source_id = ce.source_id AND c.external_id = ce.customer_id",
         )
+        customer_state = Join(
+            "metric_churn_customer_state",
+            alias="cs",
+            on="cs.source_id = ce.source_id AND cs.customer_id = ce.customer_id",
+        )
 
     class Measures:
         count = Count("*", label="churn_count")
@@ -64,6 +69,10 @@ class ChurnEventCube(Cube):
         churn_type = Dim("ce.churn_type")
         cancel_reason = Dim("ce.cancel_reason")
         customer_country = Dim("c.country", join="customer", label="customer_country")
+        # Used to scope churn events to customers active at period start
+        customer_first_active = Dim(
+            "cs.first_active_at", join="customer_state", label="customer_first_active"
+        )
 
     class TimeDimensions:
         occurred_at = TimeDim("ce.occurred_at")
