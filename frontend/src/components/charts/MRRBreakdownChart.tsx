@@ -10,14 +10,7 @@ import {
   Cell,
 } from 'recharts'
 import { formatCurrency } from '@/lib/formatters'
-
-const COLOR_MAP: Record<string, string> = {
-  New: '#2ecc71',
-  Expansion: '#3498db',
-  Reactivation: '#9b59b6',
-  Contraction: '#e67e22',
-  Churn: '#e74c3c',
-}
+import { MRR_COLOR_MAP, COLORS } from '@/lib/colors'
 
 interface MRRBreakdownChartProps {
   data: Array<{ type: string; Amount: number }>
@@ -42,7 +35,7 @@ export function MRRBreakdownChart({ data, loading }: MRRBreakdownChartProps) {
         <Tooltip formatter={(v) => formatCurrency(Number(v))} />
         <Bar dataKey="Amount">
           {data.map((entry) => (
-            <Cell key={entry.type} fill={COLOR_MAP[entry.type] ?? '#94a3b8'} />
+            <Cell key={entry.type} fill={MRR_COLOR_MAP[entry.type] ?? COLORS.grey} />
           ))}
         </Bar>
       </BarChart>

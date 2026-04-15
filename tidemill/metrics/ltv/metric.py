@@ -88,20 +88,17 @@ class LtvMetric(Metric):
         spec: QuerySpec | None,
     ) -> float | None:
         """Average Revenue Per User = total active MRR / distinct active customers."""
-        where = "WHERE s.mrr_base_cents > 0"
-        bind: dict[str, Any] = {}
-        if at:
-            where += " AND s.snapshot_at <= :at"
-            bind["at"] = at
+        from tidemill.metrics.mrr.cubes import MRRSnapshotCube
 
-        result = await self.db.execute(
-            text(
-                "SELECT SUM(s.mrr_base_cents) AS mrr,"
-                " COUNT(DISTINCT s.customer_id) AS customer_count"
-                f" FROM metric_mrr_snapshot s {where}"
-            ),
-            bind,
-        )
+        sm = MRRSnapshotCube
+        q = sm.measures.mrr + sm.measures.customer_count + sm.where("s.mrr_base_cents", ">", 0)
+        if at:
+            q = q + sm.filter("snapshot_at", "<=", at)
+        if spec:
+            q = q + sm.apply_spec(spec)
+
+        stmt, params = q.compile(sm)
+        result = await self.db.execute(stmt, params)
         row = result.mappings().first()
         if not row or not row["customer_count"]:
             return None

@@ -111,11 +111,44 @@ tidemill/
 │   └── trials/              # Trial conversion rate, funnel
 ├── cli/
 │   └── main.py              # CLI entry point
-└── api/
-    └── app.py               # FastAPI application
+├── api/
+│   └── app.py               # FastAPI application
+└── reports/                 # Analytical reports & Stripe validation
+    ├── _style.py            # Shared colours, formatters, rcParams
+    ├── mrr.py               # MRR: comparison, breakdown, waterfall, trend
+    ├── churn.py             # Churn: overview, timeline, lost MRR
+    ├── retention.py         # Retention: heatmap, curve, NRR/GRR
+    ├── ltv.py               # LTV: overview, ARPU timeline, cohort
+    ├── trials.py            # Trials: funnel, timeline
+    └── stripecheck/         # Stripe data layer & ground-truth validation
+        ├── tidemill_client.py   # Tidemill REST API client
+        ├── stripe_data.py       # Lazy-loading Stripe subscription fetcher
+        ├── stripe_metrics.py    # Ground-truth metrics from raw Stripe data
+        └── compare.py           # Side-by-side Tidemill vs Stripe comparison
 ```
 
 Each metric module: `tables.py` (schema), `cubes.py` (query model), `metric.py` (logic), `routes.py` (API), `__init__.py`.
+
+### Reports & Stripe Validation
+
+`tidemill.reports` provides pre-built charts and summaries for every metric. `tidemill.reports.stripecheck` is the data layer — it fetches from the Stripe API, computes ground-truth metrics, and compares them with Tidemill's event-driven results.
+
+```python
+from tidemill import reports
+from tidemill.reports.stripecheck import TidemillClient, StripeData
+
+reports.setup()
+tm = TidemillClient()   # reads TIDEMILL_API env var
+sd = StripeData()        # uses stripe.api_key
+
+# One-liner reports (print summary + display chart + return data)
+reports.mrr.comparison(tm, sd, at="2026-03-01")
+reports.mrr.waterfall(tm, "2025-09-01", "2026-04-30")
+reports.churn.overview(tm, sd, "2025-10-01", "2026-03-31")
+reports.retention.heatmap(sd, "2025-09-01", "2026-03-31")
+```
+
+The notebooks in `docs/notebooks/` use this library — each code cell is a single report call.
 
 ## Development Commands
 

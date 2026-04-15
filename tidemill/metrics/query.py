@@ -10,14 +10,31 @@ See docs/architecture/cubes.md for the full design rationale.
 
 from __future__ import annotations
 
+import logging
+import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
+import sqlparse
 from sqlalchemy import Select, bindparam, func, literal_column, select, text
 from sqlalchemy import table as sa_table
 
 if TYPE_CHECKING:
     from sqlalchemy.sql.elements import ColumnClause, ColumnElement, Label
+
+logger = logging.getLogger(__name__)
+
+# ── ANSI helpers for SQL log coloring ──────────────────────────────────────
+
+_GREY = "\033[90m"
+_RESET = "\033[0m"
+
+
+@lru_cache(maxsize=1)
+def _use_colors() -> bool:
+    return hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+
 
 # ── Definition types (used inside Cube declarations) ────────────
 
@@ -217,6 +234,9 @@ class QueryFragment:
             stmt = stmt.where(clause)
             params.update(f_params)
 
+        if logger.isEnabledFor(logging.DEBUG):
+            log_sql(stmt, params)
+
         return stmt, params
 
     def to_sql(
@@ -240,6 +260,58 @@ class QueryFragment:
             else:
                 sql = sql.replace(placeholder, str(value))
         return sql
+
+
+def _caller_label(depth: int = 3) -> str:
+    """Best-effort label from the call stack: ``ClassName.method_name``."""
+    try:
+        frame = sys._getframe(depth)
+        self_obj = frame.f_locals.get("self")
+        cls_name = type(self_obj).__name__ if self_obj else ""
+        method = frame.f_code.co_name
+        return f"{cls_name}.{method}" if cls_name else method
+    except (AttributeError, ValueError):
+        return ""
+
+
+def log_sql(
+    stmt: Select[Any] | str,
+    params: dict[str, Any] | None = None,
+    *,
+    label: str | None = None,
+) -> None:
+    """Log a prettified SQL statement at DEBUG level.
+
+    Accepts a SQLAlchemy ``Select`` (compiled via the PostgreSQL dialect) or a
+    raw SQL string.  Bind parameters are substituted inline for readability.
+
+    *label* is shown as the query context (e.g. ``MrrMetric._current_mrr``).
+    When omitted the caller is auto-detected from the stack.
+    """
+    if isinstance(stmt, str):
+        raw = stmt
+    else:
+        from sqlalchemy.dialects import postgresql
+
+        compiled = stmt.compile(dialect=postgresql.dialect())  # type: ignore[no-untyped-call]
+        raw = str(compiled)
+
+    if params:
+        for key, value in params.items():
+            placeholder = f"%({key})s"
+            if isinstance(value, str):
+                raw = raw.replace(placeholder, f"'{value}'")
+            elif isinstance(value, (list, tuple)):
+                formatted = ", ".join(f"'{v}'" if isinstance(v, str) else str(v) for v in value)
+                raw = raw.replace(placeholder, formatted)
+            else:
+                raw = raw.replace(placeholder, str(value))
+
+    tag = label or _caller_label()
+    pretty = sqlparse.format(raw, reindent=True, keyword_case="upper")
+    if _use_colors():
+        pretty = f"{_GREY}{pretty}{_RESET}"
+    logger.debug("[%s] Executing SQL:\n%s", tag, pretty)
 
 
 def _apply_joins(

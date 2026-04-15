@@ -14,6 +14,10 @@ FROM python:3.13-slim AS api
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN groupadd --gid 1000 tidemill && \
+    useradd --uid 1000 --gid tidemill --create-home tidemill
+
 WORKDIR /app
 
 # Install uv for fast dependency resolution
@@ -27,10 +31,14 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY tidemill/ tidemill/
 RUN uv sync --frozen --no-dev --no-editable
 
+# Drop to non-root user
+RUN chown -R tidemill:tidemill /app
+USER tidemill
+
 # Default: API server (overridden per service in docker-compose.yml)
 CMD ["uv", "run", "uvicorn", "tidemill.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # ── Stage 3: Full build (API + frontend assets for Caddy) ───────────────
 FROM api AS full
 
-COPY --from=frontend-build /app/frontend/dist /srv/frontend
+COPY --from=frontend-build --chown=tidemill:tidemill /app/frontend/dist /srv/frontend

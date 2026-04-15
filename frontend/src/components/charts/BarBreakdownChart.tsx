@@ -8,8 +8,7 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-
-const COLORS = ['#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#06b6d4', '#ec4899']
+import { COLORWAY } from '@/lib/colors'
 
 interface BarBreakdownChartProps {
   data: Array<Record<string, unknown>>
@@ -47,7 +46,7 @@ export function BarBreakdownChart({
           <Bar
             key={key}
             dataKey={key}
-            fill={COLORS[i % COLORS.length]}
+            fill={COLORWAY[i % COLORWAY.length]}
             stackId={stacked ? 'stack' : undefined}
           />
         ))}

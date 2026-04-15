@@ -11,21 +11,12 @@ import {
   ReferenceLine,
 } from 'recharts'
 import { formatCurrency, formatMonthYear } from '@/lib/formatters'
+import { COLORS } from '@/lib/colors'
 import type { WaterfallEntry } from '@/lib/types'
 
 interface WaterfallChartProps {
   data: WaterfallEntry[]
   loading?: boolean
-}
-
-const COLORS = {
-  startingMrr: '#bdc3c7',
-  new: '#2ecc71',
-  expansion: '#3498db',
-  reactivation: '#9b59b6',
-  contraction: '#e67e22',
-  churn: '#e74c3c',
-  endingMrr: '#333333',
 }
 
 const BAR_SIZE = 40

@@ -50,6 +50,7 @@ class MRRSnapshotCube(Cube):
         mrr = Sum("s.mrr_base_cents", label="mrr")
         mrr_original = Sum("s.mrr_cents", label="mrr_original")
         count = CountDistinct("s.subscription_id", label="subscription_count")
+        customer_count = CountDistinct("s.customer_id", label="customer_count")
 
     class Dimensions:
         # Source

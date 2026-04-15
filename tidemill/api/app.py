@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -16,6 +17,25 @@ from tidemill.database import make_engine, make_session_factory
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+# ── Logging ────────────────────────────────────────────────────────────────
+# Use uvicorn's DefaultFormatter so tidemill logs share the same colored
+# "LEVEL:   message" prefix as uvicorn access / error logs.
+
+_log_level = os.environ.get("TIDEMILL_LOG_LEVEL", "DEBUG").upper()
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(
+    # DefaultFormatter inherits ColourizedFormatter — auto-detects TTY,
+    # colorizes the level prefix, and pads to a fixed width.
+    __import__("uvicorn.logging", fromlist=["DefaultFormatter"]).DefaultFormatter(
+        fmt="%(levelprefix)s %(name)s - %(message)s",
+    ),
+)
+_tidemill_logger = logging.getLogger("tidemill")
+_tidemill_logger.setLevel(getattr(logging, _log_level, logging.DEBUG))
+_tidemill_logger.addHandler(_handler)
+_tidemill_logger.propagate = False
 
 
 @asynccontextmanager

@@ -270,6 +270,13 @@ resource "kubernetes_deployment" "api" {
       }
 
       spec {
+        security_context {
+          run_as_user     = 1000
+          run_as_group    = 1000
+          run_as_non_root = true
+          fs_group        = 1000
+        }
+
         container {
           name  = "api"
           image = "ghcr.io/ondraz/tidemill:latest" # TODO: replace with actual image
@@ -350,6 +357,13 @@ resource "kubernetes_deployment" "worker" {
       }
 
       spec {
+        security_context {
+          run_as_user     = 1000
+          run_as_group    = 1000
+          run_as_non_root = true
+          fs_group        = 1000
+        }
+
         container {
           name  = "worker"
           image = "ghcr.io/ondraz/tidemill:latest"

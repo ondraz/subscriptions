@@ -14,6 +14,10 @@ runcmd:
   # Install Docker
   - curl -fsSL https://get.docker.com | sh
 
+  # Create tidemill user and add to docker group
+  - useradd --system --create-home --shell /usr/sbin/nologin tidemill
+  - usermod -aG docker tidemill
+
   # Install Tailscale
   - curl -fsSL https://tailscale.com/install.sh | sh
   - tailscale up --authkey=${tailscale_auth_key} --ssh
@@ -32,7 +36,7 @@ runcmd:
 
   # Clone repo and start services
   - git clone https://github.com/ondraz/tidemill.git /opt/tidemill
-  - cd /opt/tidemill/deploy/compose
+  - chown -R tidemill:tidemill /opt/tidemill
 
   # Generate secrets and write .env
   - |
@@ -46,9 +50,11 @@ runcmd:
     CLERK_SECRET_KEY=${clerk_secret_key}
     CLERK_JWKS_URL=${clerk_jwks_url}
     EOF
+  - chown tidemill:tidemill /opt/tidemill/deploy/compose/.env
+  - chmod 600 /opt/tidemill/deploy/compose/.env
 
-  # Start services
-  - docker compose -f /opt/tidemill/deploy/compose/docker-compose.yml up -d
+  # Start services as tidemill user
+  - su - tidemill -s /bin/bash -c 'docker compose -f /opt/tidemill/deploy/compose/docker-compose.yml up -d'
 
   # Enable automatic security updates
   - systemctl enable --now unattended-upgrades

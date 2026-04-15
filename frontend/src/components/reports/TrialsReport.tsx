@@ -5,6 +5,7 @@ import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
 import { TimeRangePicker } from '@/components/controls/TimeRangePicker'
 import { formatPercent, formatNumber } from '@/lib/formatters'
+import { COLORS } from '@/lib/colors'
 
 interface TrialFunnel {
   conversion_rate: number | null
@@ -85,7 +86,7 @@ export function TrialsReport() {
           data={seriesData}
           dataKey="conversion_rate"
           formatter={formatPercent}
-          color="#7c3aed"
+          color={COLORS.arpu}
           loading={seriesLoading}
         />
       </ChartContainer>

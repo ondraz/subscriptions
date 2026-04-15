@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts'
+import { COLORS } from '@/lib/colors'
 
 interface TimeSeriesChartProps {
   data: Array<Record<string, unknown>>
@@ -22,7 +23,7 @@ export function TimeSeriesChart({
   dataKey,
   xKey = 'date',
   formatter,
-  color = '#2563eb',
+  color = COLORS.new,
   loading,
 }: TimeSeriesChartProps) {
   if (loading) {

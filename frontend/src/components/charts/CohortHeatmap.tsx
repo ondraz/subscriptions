@@ -1,17 +1,10 @@
 import type { CohortEntry } from '@/lib/types'
 import { formatMonthYear, formatPercent } from '@/lib/formatters'
+import { cohortColor } from '@/lib/colors'
 
 interface CohortHeatmapProps {
   data: CohortEntry[]
   loading?: boolean
-}
-
-function getColor(rate: number): string {
-  if (rate >= 0.9) return '#dcfce7'
-  if (rate >= 0.7) return '#bbf7d0'
-  if (rate >= 0.5) return '#fef08a'
-  if (rate >= 0.3) return '#fed7aa'
-  return '#fecaca'
 }
 
 export function CohortHeatmap({ data, loading }: CohortHeatmapProps) {
@@ -64,7 +57,7 @@ export function CohortHeatmap({ data, loading }: CohortHeatmapProps) {
                     <td
                       key={i}
                       className="px-2 py-1 text-center"
-                      style={{ backgroundColor: getColor(entry.retention_rate) }}
+                      style={{ backgroundColor: cohortColor(entry.retention_rate) }}
                     >
                       {formatPercent(entry.retention_rate)}
                     </td>

@@ -626,14 +626,27 @@ async def handle_event(self, event: Event) -> None:
 
 **Queries:**
 
-ARPU (queries MRR snapshot directly):
+ARPU (queries via `MRRSnapshotCube` — the `customer_count` measure on that cube exists for this purpose):
+```python
+sm = MRRSnapshotCube
+q = (
+    sm.measures.mrr
+    + sm.measures.customer_count
+    + sm.where("s.mrr_base_cents", ">", 0)
+)
+if at:
+    q = q + sm.filter("snapshot_at", "<=", at)
+if spec:
+    q = q + sm.apply_spec(spec)
+```
 ```sql
-SELECT SUM(s.mrr_base_cents) / COUNT(DISTINCT s.customer_id)
-FROM metric_mrr_snapshot s
+SELECT SUM(s.mrr_base_cents) AS mrr,
+       COUNT(DISTINCT s.customer_id) AS customer_count
+FROM metric_mrr_snapshot AS s
 WHERE s.mrr_base_cents > 0
 ```
 
-Simple LTV: `ARPU / logo_churn_rate` — delegates to MRR and Churn metrics.
+Simple LTV: `ARPU / logo_churn_rate` — delegates to MRR (via `MRRSnapshotCube`) and Churn metrics.
 
 Cohort LTV (joins invoice log with retention cohort table via `LtvInvoiceCube`):
 ```sql
@@ -647,7 +660,10 @@ WHERE li.paid_at BETWEEN :start AND :end
 GROUP BY rc.cohort_month
 ```
 
-**Cube:** `LtvInvoiceCube` — measures: `total_revenue`, `total_revenue_original`, `invoice_count`, `customer_count`; dimensions: `source_id`, `currency`, `customer_country` (via customer join), `cohort_month` (via retention cohort join).
+**Cubes:**
+
+- `LtvInvoiceCube` — measures: `total_revenue`, `total_revenue_original`, `invoice_count`, `customer_count`; dimensions: `source_id`, `currency`, `customer_country` (via customer join), `cohort_month` (via retention cohort join).
+- `MRRSnapshotCube` — used by ARPU for `mrr` and `customer_count` measures. This cross-metric cube dependency is why LTV declares `dependencies = ["mrr"]`.
 
 **API endpoints:** `GET /metrics/ltv` (simple), `GET /metrics/ltv/arpu`, `GET /metrics/ltv/cohort`
 
@@ -881,10 +897,10 @@ class QuickRatioMetric(Metric):
 Dependency graph for built-in metrics:
 
 ```
-mrr ──────────────────► retention (NRR/GRR)
-  └──────────────────► quick_ratio
-  └──────────────────► ltv (ARPU)
-churn ─────────────────► ltv (churn rate denominator)
+mrr ──────────────────► retention (NRR/GRR query MRRSnapshotCube + MRRMovementCube)
+  └──────────────────► quick_ratio (queries MRRMovementCube)
+  └──────────────────► ltv (ARPU queries MRRSnapshotCube.mrr + .customer_count)
+churn ─────────────────► ltv (simple LTV = ARPU / logo churn rate)
 ```
 
 Trials has no dependencies — it only processes its own events.

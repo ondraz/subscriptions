@@ -54,7 +54,7 @@ export function MRRReport() {
   const breakdownMap = new Map(
     (breakdown ?? []).map((row) => [
       String(row.movement_type ?? '').toLowerCase(),
-      (row.amount_base || 0) / 100,
+      (Number(row.amount_base) || 0) / 100,
     ])
   )
   const breakdownData = MOVEMENT_TYPES.map((type) => ({
