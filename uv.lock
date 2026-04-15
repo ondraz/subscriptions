@@ -11,7 +11,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-04-01T06:55:01.301564Z"
+exclude-newer = "2026-04-01T07:39:13.124382Z"
 exclude-newer-span = "P14D"
 
 [[package]]
@@ -1252,6 +1252,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mkdocs-toggle-sidebar-plugin"
+version = "0.0.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mkdocs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/39/34/a91f58ab2cd59b7d251a45f6411d2d24ba60be04ff5b0d2806a12d4fd330/mkdocs_toggle_sidebar_plugin-0.0.9.tar.gz", hash = "sha256:e0e231709b48f98812949722d31d76aeb25b2c4062ac1f58a322b428b0110c9f", size = 15218, upload-time = "2025-11-08T18:37:21.395Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/11/17a55b2a4453f0b06bef3a97646412ce74e7207134b0fda26dedb6421207/mkdocs_toggle_sidebar_plugin-0.0.9-py3-none-any.whl", hash = "sha256:96c7011b12ea12731a60ad491367c3b3ec28ebfc7929d27662c0d8a8906639ab", size = 14634, upload-time = "2025-11-08T18:37:20.014Z" },
+]
+
+[[package]]
 name = "mypy"
 version = "1.19.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2230,6 +2242,7 @@ dev = [
     { name = "matplotlib" },
     { name = "mkdocs-jupyter" },
     { name = "mkdocs-material" },
+    { name = "mkdocs-toggle-sidebar-plugin" },
     { name = "mypy" },
     { name = "pandas" },
     { name = "plotly" },
@@ -2265,6 +2278,7 @@ dev = [
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "mkdocs-jupyter", specifier = ">=0.25" },
     { name = "mkdocs-material", specifier = ">=9.6" },
+    { name = "mkdocs-toggle-sidebar-plugin", specifier = ">=0.0.9" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pandas", specifier = ">=3.0.1" },
     { name = "plotly", specifier = ">=5.0" },

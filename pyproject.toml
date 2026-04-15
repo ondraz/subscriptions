@@ -55,6 +55,7 @@ dev = [
     "rich>=14.3.3",
     "ruff>=0.8",
     "sqlparse>=0.5.5",
+    "mkdocs-toggle-sidebar-plugin>=0.0.9",
 ]
 
 
