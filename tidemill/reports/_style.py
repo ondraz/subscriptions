@@ -6,47 +6,47 @@ import plotly.graph_objects as go
 import plotly.io as pio
 
 # ── Tidemill colour palette ─────────────────────────────────────────
-# Ocean-inspired, designed for financial / SaaS analytics dashboards.
+# Warm orange-based palette for financial / SaaS analytics dashboards.
 
 COLORS: dict[str, str] = {
     # MRR movements
-    "new": "#0D9488",  # teal-600
+    "new": "#16A34A",  # green-600
     "expansion": "#2563EB",  # blue-600
-    "contraction": "#D97706",  # amber-600
+    "contraction": "#EAB308",  # yellow-500
     "churn": "#DC2626",  # red-600
-    "reactivation": "#7C3AED",  # violet-600
-    "starting_mrr": "#94A3B8",  # slate-400
+    "reactivation": "#8B5CF6",  # violet-500
+    "starting_mrr": "#78716C",  # stone-500
     # subscription status
-    "active": "#0D9488",
-    "canceled": "#DC2626",
-    "trialing": "#D97706",
+    "active": "#16A34A",  # green-600
+    "canceled": "#DC2626",  # red-600
+    "trialing": "#F59E0B",  # amber-500
     "past_due": "#EA580C",  # orange-600
     # trials
-    "converted": "#0D9488",
-    "expired": "#DC2626",
-    "pending": "#64748B",  # slate-500
+    "converted": "#16A34A",  # green-600
+    "expired": "#DC2626",  # red-600
+    "pending": "#78716C",  # stone-500
     # retention
-    "nrr": "#2563EB",
-    "grr": "#0D9488",
+    "nrr": "#2563EB",  # blue-600
+    "grr": "#16A34A",  # green-600
     # churn lines
-    "logo_churn": "#DC2626",
-    "revenue_churn": "#EA580C",
+    "logo_churn": "#DC2626",  # red-600
+    "revenue_churn": "#F59E0B",  # amber-500
     # other
-    "arpu": "#7C3AED",
-    "grey": "#94A3B8",
+    "arpu": "#8B5CF6",  # violet-500
+    "grey": "#78716C",  # stone-500
 }
 
 # Default colour cycle for multi-series charts.
 COLORWAY: list[str] = [
-    "#0D9488",  # teal
+    "#F59E0B",  # amber
     "#2563EB",  # blue
-    "#7C3AED",  # violet
-    "#D97706",  # amber
+    "#16A34A",  # green
+    "#8B5CF6",  # violet
     "#DC2626",  # red
     "#0891B2",  # cyan
     "#DB2777",  # pink
-    "#65A30D",  # lime
-    "#64748B",  # slate
+    "#84CC16",  # lime
+    "#78716C",  # stone
 ]
 
 # ── Plotly template ─────────────────────────────────────────────────
@@ -55,36 +55,36 @@ tidemill_template = go.layout.Template(
     layout=go.Layout(
         font_family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif",
         font_size=13,
-        font_color="#334155",  # slate-700
+        font_color="#44403C",  # stone-700
         title_font_size=16,
-        title_font_color="#0F172A",  # slate-900
+        title_font_color="#1C1917",  # stone-900
         title_x=0.5,
         title_y=0.97,
         colorway=COLORWAY,
         colorscale_sequential=[
-            [0.0, "#F0FDFA"],  # teal-50
-            [0.25, "#99F6E4"],  # teal-200
-            [0.5, "#2DD4BF"],  # teal-400
-            [0.75, "#0D9488"],  # teal-600
-            [1.0, "#134E4A"],  # teal-900
+            [0.0, "#FFF7ED"],  # orange-50
+            [0.25, "#FED7AA"],  # orange-200
+            [0.5, "#FB923C"],  # orange-400
+            [0.75, "#EA580C"],  # orange-600
+            [1.0, "#431407"],  # orange-950
         ],
         colorscale_sequentialminus=[
-            [0.0, "#134E4A"],
-            [1.0, "#F0FDFA"],
+            [0.0, "#431407"],  # orange-950
+            [1.0, "#FFF7ED"],  # orange-50
         ],
         coloraxis_colorbar=dict(outlinewidth=0, ticklen=6, tickwidth=1),
         xaxis=dict(
             showgrid=True,
-            gridcolor="#E2E8F0",  # slate-200
+            gridcolor="#E7E5E4",  # stone-200
             title_standoff=8,
-            linecolor="#CBD5E1",  # slate-300
+            linecolor="#D6D3D1",  # stone-300
             zeroline=False,
         ),
         yaxis=dict(
             showgrid=True,
-            gridcolor="#E2E8F0",
+            gridcolor="#E7E5E4",  # stone-200
             title_standoff=8,
-            linecolor="#CBD5E1",
+            linecolor="#D6D3D1",  # stone-300
             zeroline=False,
         ),
         margin=dict(t=60, b=40, l=60, r=60),
@@ -98,7 +98,7 @@ tidemill_template = go.layout.Template(
         hoverlabel=dict(
             bgcolor="white",
             font_size=12,
-            font_color="#334155",
+            font_color="#44403C",  # stone-700
         ),
     ),
     data=dict(

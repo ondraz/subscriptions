@@ -1,6 +1,8 @@
-# Tidemill
+<p align="center">
+  <img src="assets/logo-color.svg" alt="Tidemill" width="280">
+</p>
 
-Open-source subscription analytics — compute and visualize MRR, ARR, LTV, retention, churn, and more from your billing data.
+<p align="center">Open-source subscription analytics — compute and visualize MRR, ARR, LTV, retention, churn, and more from your billing data.</p>
 
 ## Architecture
 

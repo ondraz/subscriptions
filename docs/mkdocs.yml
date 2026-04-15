@@ -8,16 +8,18 @@ site_dir: ../site
 
 theme:
   name: material
+  logo: assets/icon-color.svg
+  favicon: assets/favicon.svg
   palette:
     - scheme: default
-      primary: indigo
-      accent: indigo
+      primary: deep orange
+      accent: amber
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: deep orange
+      accent: amber
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -60,6 +62,7 @@ extra_javascript:
 nav:
   - Home: index.md
   - Definitions: definitions.md
+  - Palette: palette.md
   - Architecture:
       - Overview: architecture/overview.md
       - Events: architecture/events.md
