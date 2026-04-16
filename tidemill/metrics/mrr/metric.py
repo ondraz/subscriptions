@@ -69,6 +69,7 @@ class MrrMetric(Metric):
                 mrr = p.get("mrr_cents", 0)
                 currency = p.get("currency", "USD") or "USD"
                 mrr_base = await to_base_cents(mrr, currency, event.occurred_at.date(), self.db)
+                movement_type = await self._classify_activation(event)
                 await self._upsert_snapshot(
                     event,
                     ext_id,
@@ -79,7 +80,7 @@ class MrrMetric(Metric):
                 await self._append_movement(
                     event,
                     ext_id,
-                    "new",
+                    movement_type,
                     mrr,
                     mrr_base,
                     currency,
@@ -148,6 +149,34 @@ class MrrMetric(Metric):
                     mrr_base,
                     currency,
                 )
+
+    async def _classify_activation(self, event: Event) -> str:
+        """Classify a ``subscription.activated`` event as ``new`` or ``reactivation``.
+
+        A customer is reactivating if they had prior MRR movements but their
+        cumulative MRR was zero just before this event (i.e., all earlier
+        subscriptions were churned or paused). A brand-new customer or one
+        with already-active subscriptions is recorded as ``new``.
+        """
+        result = await self.db.execute(
+            text(
+                "SELECT COUNT(*) AS n,"
+                "       COALESCE(SUM(amount_base_cents), 0) AS cum"
+                " FROM metric_mrr_movement"
+                " WHERE source_id = :src"
+                "   AND customer_id = :cid"
+                "   AND occurred_at < :now"
+            ),
+            {
+                "src": event.source_id,
+                "cid": event.customer_id,
+                "now": event.occurred_at,
+            },
+        )
+        row = result.mappings().one()
+        if int(row["n"]) > 0 and int(row["cum"] or 0) <= 0:
+            return "reactivation"
+        return "new"
 
     async def _upsert_snapshot(
         self,

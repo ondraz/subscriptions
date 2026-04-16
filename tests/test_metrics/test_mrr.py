@@ -242,6 +242,82 @@ class TestMrrHandler:
         assert react[1] == 5000
 
     @pytest.mark.asyncio
+    async def test_activated_after_churn_is_reactivation(self, metric, db):
+        """A new subscription for a fully churned customer → reactivation.
+
+        Stripe emits ``subscription.activated`` for any canceled→active
+        transition, including a brand-new subscription on a different
+        sub_id.  When the customer's cumulative MRR was zero before the
+        event, the movement should be reactivation rather than new.
+        """
+        await metric.handle_event(
+            make_evt(
+                "subscription.activated",
+                {"external_id": "sub_1", "mrr_cents": 2000, "currency": "USD"},
+            )
+        )
+        await metric.handle_event(
+            make_evt(
+                "subscription.churned",
+                {"external_id": "sub_1", "prev_mrr_cents": 2000, "currency": "USD"},
+                occurred_at=T1,
+            )
+        )
+        await db.commit()
+
+        await metric.handle_event(
+            make_evt(
+                "subscription.activated",
+                {"external_id": "sub_2", "mrr_cents": 2000, "currency": "USD"},
+                external_id="sub_2",
+                occurred_at=T2,
+            )
+        )
+        await db.commit()
+
+        moves = (
+            await db.execute(
+                text(
+                    "SELECT movement_type, amount_cents FROM metric_mrr_movement"
+                    " ORDER BY occurred_at"
+                )
+            )
+        ).fetchall()
+        assert [m[0] for m in moves] == ["new", "churn", "reactivation"]
+        assert moves[2][1] == 2000
+
+    @pytest.mark.asyncio
+    async def test_concurrent_sub_stays_new(self, metric, db):
+        """Second concurrent subscription for an active customer stays ``new``."""
+        await metric.handle_event(
+            make_evt(
+                "subscription.activated",
+                {"external_id": "sub_1", "mrr_cents": 2000, "currency": "USD"},
+            )
+        )
+        await db.commit()
+
+        await metric.handle_event(
+            make_evt(
+                "subscription.activated",
+                {"external_id": "sub_2", "mrr_cents": 3000, "currency": "USD"},
+                external_id="sub_2",
+                occurred_at=T1,
+            )
+        )
+        await db.commit()
+
+        moves = (
+            await db.execute(
+                text(
+                    "SELECT movement_type, amount_cents FROM metric_mrr_movement"
+                    " ORDER BY occurred_at"
+                )
+            )
+        ).fetchall()
+        assert [m[0] for m in moves] == ["new", "new"]
+
+    @pytest.mark.asyncio
     async def test_idempotent_replay(self, metric, db):
         """Processing the same event twice → one movement row."""
         event = make_evt(

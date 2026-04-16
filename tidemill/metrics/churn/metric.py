@@ -68,7 +68,7 @@ class ChurnMetric(Metric):
                 )
 
             case "subscription.activated" | "subscription.reactivated":
-                sub_id = p.get("external_id", event.external_id)
+                sub_id = p["external_id"]
                 # Track this subscription as active; skip if already tracked
                 # (idempotent — duplicate Kafka deliveries won't double-count)
                 result = await self.db.execute(
@@ -123,7 +123,7 @@ class ChurnMetric(Metric):
                     )
 
             case "subscription.churned":
-                sub_id = p.get("external_id", event.external_id)
+                sub_id = p["external_id"]
                 # Remove subscription from active set; skip if already removed
                 # (idempotent — duplicate deliveries won't double-decrement)
                 removed = await self.db.execute(

@@ -165,7 +165,7 @@ def style_movement_log(df: pd.DataFrame) -> pd.io.formats.style.Styler:
 
     def _highlight_subtotals(row: pd.Series) -> list[str]:
         if row.name in subtotal_indices:
-            return ["font-weight: bold; background-color: #F5F5F4"] * len(row)
+            return ["font-weight: bold; background-color: #F5F5F4; color: #1C1917"] * len(row)
         return [""] * len(row)
 
     def _color_movement(val: object) -> str:
