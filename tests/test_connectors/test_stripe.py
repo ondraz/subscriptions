@@ -87,6 +87,34 @@ class TestComputeMrr:
         }
         assert connector._compute_mrr(sub) == 2000 + 1500
 
+    def test_metered_excluded(self, connector: StripeConnector):
+        """Metered (usage-based) prices should not count toward MRR."""
+        sub = {
+            "items": {
+                "data": [
+                    {
+                        "price": {
+                            "unit_amount": 2000,
+                            "recurring": {"interval": "month", "interval_count": 1},
+                        },
+                        "quantity": 1,
+                    },
+                    {
+                        "price": {
+                            "unit_amount": 100,
+                            "recurring": {
+                                "interval": "month",
+                                "interval_count": 1,
+                                "usage_type": "metered",
+                            },
+                        },
+                        "quantity": 1,
+                    },
+                ]
+            }
+        }
+        assert connector._compute_mrr(sub) == 2000
+
     def test_empty_items(self, connector: StripeConnector):
         assert connector._compute_mrr({"items": {"data": []}}) == 0
 

@@ -81,11 +81,12 @@ def subscription_mrr(sub: dict) -> int:
     total = 0
     for item in sub["items"]["data"]:
         price = item["price"]
+        rec = price.get("recurring") or {}
+        if rec.get("usage_type") == "metered":
+            continue
         qty = item.get("quantity", 1) or 1
         unit_amount = price.get("unit_amount", 0) or 0
         amount = unit_amount * qty
-
-        rec = price.get("recurring") or {}
         interval = rec.get("interval", "month")
         interval_count = rec.get("interval_count", 1) or 1
 

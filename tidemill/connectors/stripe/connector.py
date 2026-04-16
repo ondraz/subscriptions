@@ -86,10 +86,12 @@ class StripeConnector(WebhookConnector):
         items_data = items.get("data", []) if isinstance(items, dict) else []
         for item in items_data:
             price = item.get("price", {})
+            recurring = price.get("recurring") or {}
+            if recurring.get("usage_type") == "metered":
+                continue
             qty = item.get("quantity", 1) or 1
             unit_amount = price.get("unit_amount", 0) or 0
             amount = unit_amount * qty
-            recurring = price.get("recurring") or {}
             interval = recurring.get("interval", "month")
             interval_count = recurring.get("interval_count", 1) or 1
 
