@@ -63,7 +63,7 @@ COMPOSE_LOCAL := docker compose -f deploy/compose/docker-compose.yml -f deploy/c
 
 seed: ## Seed Stripe test data
 	./deploy/seed/seed.sh --cleanup-only
-	SEED_MONTHS=8 ./deploy/seed/seed.sh
+	./deploy/seed/seed.sh
 	@$(COMPOSE_LOCAL) stop
 
 

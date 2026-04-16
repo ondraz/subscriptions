@@ -20,7 +20,7 @@ COMPOSE_DIR="$ROOT/deploy/compose"
 COMPOSE="docker compose -f $COMPOSE_DIR/docker-compose.yml -f $COMPOSE_DIR/docker-compose.local.yml"
 API="http://localhost:8000"
 SEED_CUSTOMERS="${SEED_CUSTOMERS:-19}"
-SEED_MONTHS="${SEED_MONTHS:-6}"
+SEED_MONTHS="${SEED_MONTHS:-8}"
 
 full_cleanup() {
     echo ""
