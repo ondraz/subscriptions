@@ -218,17 +218,11 @@ class ChurnMetric(Metric):
 
         churned = rows[0]["churn_count"] if rows else 0
 
-        # Denominator: customers active at period start
-        sm = self.state_model
-        dq = (
-            sm.measures.count
-            + sm.where("cs.first_active_at", "<", start)
-            + sm.where("COALESCE(cs.churned_at, '9999-12-31'::timestamptz)", ">=", start)
-        )
-        dstmt, dparams = dq.compile(sm)
-        dresult = await self.db.execute(dstmt, dparams)
-        drows = dresult.mappings().all()
-        active_start = drows[0]["customer_count"] if drows else 0
+        # Denominator: customers with positive MRR at period start.
+        # Using MRR movements rather than the state table because
+        # churned_at is cleared on reactivation, which mis-counts
+        # customers who churned before start and later reactivated.
+        active_start = await self._active_at_start_count(start)
 
         if active_start == 0:
             return None
@@ -275,6 +269,16 @@ class ChurnMetric(Metric):
             return None
         return float(churn_amount) / float(start_mrr)
 
+    async def _active_at_start_count(self, start: date) -> int:
+        """Count customers with positive MRR at period start."""
+        from tidemill.metrics.mrr.cubes import MRRMovementCube
+
+        mm = MRRMovementCube
+        q = mm.dimension("customer_id") + mm.measures.amount + mm.filter("occurred_at", "<", start)
+        stmt, params = q.compile(mm)
+        result = await self.db.execute(stmt, params)
+        return sum(1 for r in result.mappings().all() if int(r["amount_base"] or 0) > 0)
+
     async def _customer_detail(
         self,
         start: date,
@@ -288,16 +292,19 @@ class ChurnMetric(Metric):
         em = self.event_model
         sm = self.state_model
 
-        # 1. Customers active at start
+        # 1. Customers active at start (with name)
         aq = (
             sm.dimension("customer_id")
+            + sm.dimension("customer_name")
             + sm.measures.count
             + sm.where("cs.first_active_at", "<", start)
             + sm.where("COALESCE(cs.churned_at, '9999-12-31'::timestamptz)", ">=", start)
         )
         astmt, aparams = aq.compile(sm)
         aresult = await self.db.execute(astmt, aparams)
-        active_customers = {r["customer_id"] for r in aresult.mappings().all()}
+        active_rows = aresult.mappings().all()
+        active_customers = {r["customer_id"] for r in active_rows}
+        name_by_cust = {r["customer_id"]: r["customer_name"] for r in active_rows}
 
         # 2. Logo churn events per customer (fully churned)
         lq = (
@@ -338,13 +345,21 @@ class ChurnMetric(Metric):
             r["customer_id"]: int(r["amount_base"] or 0) for r in mresult.mappings().all()
         }
 
+        # Only include customers with positive starting MRR.
+        # The state table stores *current* state — churned_at is cleared on
+        # reactivation, so a customer who churned before `start` and later
+        # reactivated would pass the state-table filter even though they were
+        # not active at `start`.  MRR movements are event-sourced with
+        # timestamps, so cumulative MRR < start == 0 is the reliable check.
         return [
             {
                 "customer_id": cid,
+                "customer_name": name_by_cust.get(cid),
                 "active_at_start": True,
                 "fully_churned": cid in logo_by_cust,
                 "churned_mrr_cents": rev_by_cust.get(cid, 0),
                 "starting_mrr_cents": mrr_by_cust.get(cid, 0),
             }
             for cid in sorted(active_customers)
+            if mrr_by_cust.get(cid, 0) > 0
         ]

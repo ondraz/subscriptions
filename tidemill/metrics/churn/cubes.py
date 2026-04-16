@@ -36,6 +36,7 @@ class ChurnCustomerStateCube(Cube):
     class Dimensions:
         source_id = Dim("cs.source_id")
         customer_id = Dim("cs.customer_id")
+        customer_name = Dim("c.name", join="customer", label="customer_name")
         customer_country = Dim("c.country", join="customer", label="customer_country")
 
     class TimeDimensions:

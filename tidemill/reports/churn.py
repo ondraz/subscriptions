@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 # ── data ─────────────────────────────────────────────────────────────
 
 
-def stripe_overview(
+def overview(
     tm: TidemillClient,
     sd: StripeData,
     start: str,
@@ -91,7 +91,7 @@ def monthly_lost_mrr(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
 # ── style ────────────────────────────────────────────────────────────
 
 
-def style_stripe_overview(data: dict[str, Any]) -> pd.io.formats.style.Styler:
+def style_overview(data: dict[str, Any]) -> pd.io.formats.style.Styler:
     """Format churn overview as a styled comparison table.
 
     Args:
@@ -163,7 +163,7 @@ def style_timeline(df: pd.DataFrame) -> pd.io.formats.style.Styler:
 # ── charts ───────────────────────────────────────────────────────────
 
 
-def plot_stripe_overview(data: dict[str, Any]) -> go.Figure:
+def plot_overview(data: dict[str, Any]) -> go.Figure:
     """Customer-churn pie + revenue-impact bar from overview data.
 
     Args:
@@ -351,9 +351,19 @@ def tidemill_customer_detail(
     """
     data = tm.churn_customers(start, end)
     if not data:
-        cols = ["customer", "active_at_start", "fully_churned", "churned_mrr_cents"]
+        cols = [
+            "customer",
+            "customer_name",
+            "active_at_start",
+            "fully_churned",
+            "churned_mrr_cents",
+            "starting_mrr_cents",
+        ]
         return pd.DataFrame(columns=cols)
     df = pd.DataFrame(data).rename(columns={"customer_id": "customer"})
+    if "customer_name" not in df.columns:
+        df["customer_name"] = None
+    df["customer_name"] = df["customer_name"].fillna("")
     return df.sort_values("customer").reset_index(drop=True)
 
 
@@ -552,6 +562,72 @@ def style_stripe_cancellations(df: pd.DataFrame) -> pd.io.formats.style.Styler:
         df: DataFrame from :func:`stripe_cancellations`.
     """
     return df[["id", "customer", "canceled_month", "mrr"]].style.hide(axis="index")
+
+
+def style_c_start(detail: pd.DataFrame) -> pd.io.formats.style.Styler:
+    """C_start — customers active at period start, with starting MRR.
+
+    Args:
+        detail: DataFrame from :func:`tidemill_customer_detail`.
+    """
+    df = detail[["customer", "starting_mrr_cents"]].copy()
+    if "customer_name" in detail.columns:
+        df.insert(1, "customer_name", detail["customer_name"])
+    df["starting_mrr"] = df.starting_mrr_cents.apply(lambda c: f"${c / 100:,.2f}")
+    total = int(df.starting_mrr_cents.sum())
+    totals = pd.DataFrame(
+        [{"customer": "TOTAL", "customer_name": "", "starting_mrr": f"${total / 100:,.2f}"}]
+    )
+    display = pd.concat([df, totals], ignore_index=True)
+    cols = (
+        ["customer", "customer_name", "starting_mrr"]
+        if "customer_name" in display.columns
+        else ["customer", "starting_mrr"]
+    )
+    return (
+        display[cols]
+        .style.set_caption(f"C_start: {len(detail)} customers, ${total / 100:,.2f} MRR")
+        .hide(axis="index")
+    )
+
+
+def style_c_churned(detail: pd.DataFrame) -> pd.io.formats.style.Styler:
+    """C_churned — customers who fully churned, with churned MRR.
+
+    Args:
+        detail: DataFrame from :func:`tidemill_customer_detail`.
+    """
+    churned = detail[detail.fully_churned].copy()
+    df = churned[["customer", "starting_mrr_cents", "churned_mrr_cents"]].copy()
+    if "customer_name" in churned.columns:
+        df.insert(1, "customer_name", churned["customer_name"])
+    df["starting_mrr"] = df.starting_mrr_cents.apply(lambda c: f"${c / 100:,.2f}")
+    df["churned_mrr"] = df.churned_mrr_cents.apply(lambda c: f"${c / 100:,.2f}")
+    total_start = int(df.starting_mrr_cents.sum())
+    total_churned = int(df.churned_mrr_cents.sum())
+    totals = pd.DataFrame(
+        [
+            {
+                "customer": "TOTAL",
+                "customer_name": "",
+                "starting_mrr": f"${total_start / 100:,.2f}",
+                "churned_mrr": f"${total_churned / 100:,.2f}",
+            }
+        ]
+    )
+    display = pd.concat([df, totals], ignore_index=True)
+    cols = (
+        ["customer", "customer_name", "starting_mrr", "churned_mrr"]
+        if "customer_name" in display.columns
+        else ["customer", "starting_mrr", "churned_mrr"]
+    )
+    return (
+        display[cols]
+        .style.set_caption(
+            f"C_churned: {len(churned)} customers, ${total_churned / 100:,.2f} lost MRR"
+        )
+        .hide(axis="index")
+    )
 
 
 def plot_stripe_detail(stripe_churn: dict[str, Any]) -> go.Figure:
