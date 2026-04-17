@@ -1,7 +1,7 @@
 # API & CLI
 
 > FastAPI and CLI facades over the metrics engine.
-> Last updated: March 2026
+> Last updated: April 2026
 
 ## Design
 
@@ -83,15 +83,15 @@ from tidemill import MetricsEngine, QuerySpec
 # Ingestion mode (Stripe) — engine queries materialized metric_* tables
 engine = MetricsEngine(db=async_session)
 
-# Same-database mode (Lago) — engine also queries billing tables via connector
-# from tidemill.connectors import get_connector
-# connector = get_connector("lago", engine=async_db_engine)
-# engine = MetricsEngine(db=async_session, connector=connector)
+# Same-database mode (Lago / Kill Bill) is configured per-metric by passing a
+# DatabaseConnector into that metric's constructor or init(...) hook. The engine
+# itself only owns the shared AsyncSession.
 
 # Dynamic query dispatch — all metric queries are async
 mrr = await engine.query("mrr", {"query_type": "current"})
 churn = await engine.query("churn", {"start": date(2026, 1, 1), "end": date(2026, 3, 1), "type": "logo"})
-cohorts = await engine.query("retention", {"start": date(2025, 1, 1), "end": date(2026, 1, 1)})
+cohorts = await engine.query("retention", {"query_type": "cohort_matrix",
+                                            "start": date(2025, 1, 1), "end": date(2026, 1, 1)})
 
 # With dimensions and filters via QuerySpec
 spec = QuerySpec(
@@ -102,7 +102,7 @@ enterprise_mrr = await engine.query("mrr", {"query_type": "current"}, spec=spec)
 
 # Synchronous — no I/O
 print(engine.available_metrics())
-# ['churn', 'ltv', 'mrr', 'quick_ratio', 'retention', 'trials']
+# ['churn', 'ltv', 'mrr', 'retention', 'trials']
 ```
 
 ## HTTP API
@@ -153,18 +153,23 @@ async def get_mrr(
 
 | Method | Path | Returns |
 |--------|------|---------|
+| `GET` | `/api/metrics` | List of registered metric names |
+| `GET` | `/api/metrics/summary` | MRR, ARR, churn, retention, LTV, ARPU, trial conversion in one call |
 | `GET` | `/api/metrics/mrr` | MRR (point or series) |
-| `GET` | `/api/metrics/arr` | ARR (point or series) |
-| `GET` | `/api/metrics/mrr/breakdown` | Net new MRR breakdown |
+| `GET` | `/api/metrics/arr` | ARR (point) |
+| `GET` | `/api/metrics/mrr/breakdown` | Net new MRR breakdown by movement type |
 | `GET` | `/api/metrics/mrr/waterfall` | Monthly MRR waterfall (movements per month) |
-| `GET` | `/api/metrics/churn` | Churn rate (logo or revenue) |
-| `GET` | `/api/metrics/retention` | Cohort retention matrix |
-| `GET` | `/api/metrics/ltv` | LTV (point or series) |
-| `GET` | `/api/metrics/arpu` | ARPU (point or series) |
+| `GET` | `/api/metrics/churn` | Churn rate (`type=logo` or `type=revenue`) |
+| `GET` | `/api/metrics/churn/customers` | Per-customer churn detail (C_start / C_churned) |
+| `GET` | `/api/metrics/churn/revenue-events` | Per-customer revenue-churn events |
+| `GET` | `/api/metrics/retention` | Retention — `query_type=nrr` / `grr` / `cohort_matrix` |
+| `GET` | `/api/metrics/ltv` | Simple LTV |
+| `GET` | `/api/metrics/ltv/arpu` | ARPU (point) |
+| `GET` | `/api/metrics/ltv/cohort` | Per-cohort LTV breakdown |
 | `GET` | `/api/metrics/trials` | Trial conversion rate |
-| `GET` | `/api/metrics/quick-ratio` | Quick ratio |
-| `GET` | `/api/metrics/customers` | Customer count (point or series) |
-| `GET` | `/api/metrics/summary` | All current metrics in one call |
+| `GET` | `/api/metrics/trials/funnel` | Trial funnel (started / converted / expired) |
+| `GET` | `/api/metrics/trials/series` | Monthly trial time-series |
+| `POST` | `/api/metrics/{metric}` | Generic query-by-body for any registered metric — body is `{"params": ..., "spec": {...}}` |
 
 **Common query parameters:**
 
@@ -175,18 +180,17 @@ async def get_mrr(
 | `end` | `date` | Series end date |
 | `interval` | `string` | `day`, `week`, `month`, `year` |
 
-**Segment parameters (apply to all metric endpoints):**
+**Segment parameters (apply to most metric endpoints):**
+
+All metric endpoints share a common `QuerySpec` contract built from three query-string parameters (see `tidemill.metrics.route_helpers.parse_spec`):
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `source_ids` | `string[]` | Filter to specific billing sources |
-| `customer_ids` | `string[]` | Filter to specific customers |
-| `customer_tags` | `string[]` | Filter by customer tags |
-| `customer_country` | `string[]` | ISO 3166-1 alpha-2 country codes |
-| `plan_ids` | `string[]` | Filter to specific plans |
-| `plan_intervals` | `string[]` | `monthly`, `yearly`, `quarterly`, etc. |
-| `currencies` | `string[]` | ISO 4217 — shows original-currency amounts; omit for USD aggregate |
-| `group_by` | `string[]` | Dimensional cut: `plan_id`, `plan_interval`, `customer_country`, `source_id`, `currency` |
+| `dimensions` | `string[]` | GROUP BY dimensions — names declared in the metric's Cube (e.g. `plan_interval`, `customer_country`, `currency`) |
+| `filter` | `string[]` | Repeated `key=value` filters, e.g. `filter=customer_country=US&filter=plan_interval=monthly` |
+| `granularity` | `string` | Time bucketing for series queries — `day`, `week`, `month`, `quarter`, or `year` |
+
+Invalid dimension/filter names raise a `400` with the list of available options for that metric's cube.
 
 When `start` and `end` are provided, the endpoint returns a time series. Otherwise it returns a single value.
 

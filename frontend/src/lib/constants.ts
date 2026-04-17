@@ -1,5 +1,5 @@
 import type { RelativeRange } from './types'
-import { subDays, subYears, startOfYear, format } from 'date-fns'
+import { subDays, subYears, startOfYear, addDays, format } from 'date-fns'
 
 export const RELATIVE_RANGES: { label: string; value: RelativeRange }[] = [
   { label: 'Last 7 days', value: 'last_7d' },
@@ -11,8 +11,10 @@ export const RELATIVE_RANGES: { label: string; value: RelativeRange }[] = [
 ]
 
 export function resolveRelativeRange(range: RelativeRange): { start: string; end: string } {
+  // `end` is *exclusive* (first day after the included period) so the
+  // backend's BETWEEN filter covers today's events through end-of-day.
   const now = new Date()
-  const end = format(now, 'yyyy-MM-dd')
+  const end = format(addDays(now, 1), 'yyyy-MM-dd')
   switch (range) {
     case 'last_7d':
       return { start: format(subDays(now, 7), 'yyyy-MM-dd'), end }

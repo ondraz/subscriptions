@@ -1,52 +1,47 @@
 import { useTimeRange } from '@/hooks/useTimeRange'
-import { useMetric } from '@/hooks/useMetrics'
+import { useTrialFunnel, useTrialSeries } from '@/hooks/useMetrics'
 import { KPICard } from '@/components/charts/KPICard'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
+import { BarBreakdownChart } from '@/components/charts/BarBreakdownChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
-import { TimeRangePicker } from '@/components/controls/TimeRangePicker'
 import { formatPercent, formatNumber } from '@/lib/formatters'
 import { COLORS } from '@/lib/colors'
-
-interface TrialFunnel {
-  conversion_rate: number | null
-  started: number
-  converted: number
-  expired: number
-}
-
-interface TrialSeriesRow {
-  period: string
-  started: number
-  converted: number
-  expired: number
-  conversion_rate: number | null
-}
+import type { TrialFunnel, TrialSeriesRow } from '@/lib/types'
 
 export function TrialsReport() {
-  const { start, end, interval, setRange } = useTimeRange({ range: 'last_1y' })
+  const { start, end, interval } = useTimeRange({ range: 'last_1y' })
 
-  const { data: funnel, isLoading: funnelLoading } = useMetric<TrialFunnel>(
-    '/api/metrics/trials/funnel', { start, end },
-  )
-  const { data: rawSeries, isLoading: seriesLoading } = useMetric<TrialSeriesRow[]>(
-    '/api/metrics/trials/series', { start, end, interval },
-  )
+  const { data: funnel, isLoading: funnelLoading } = useTrialFunnel<TrialFunnel>({ start, end })
+  const { data: rawSeries, isLoading: seriesLoading } = useTrialSeries<TrialSeriesRow[]>({
+    start, end, interval,
+  })
 
-  // Transform series: period → date
-  const seriesData = (Array.isArray(rawSeries) ? rawSeries : []).map((row) => ({
+  const series = Array.isArray(rawSeries) ? rawSeries : []
+
+  const conversionSeries = series.map((row) => ({
     date: String(row.period ?? '').slice(0, 10),
     conversion_rate: row.conversion_rate,
   }))
 
+  const outcomesSeries = series.map((row) => ({
+    date: String(row.period ?? '').slice(0, 10),
+    Converted: row.converted,
+    Expired: row.expired,
+    Pending: Math.max(0, row.started - row.converted - row.expired),
+  }))
+
+  // Trial funnel — one row per stage, for the bar chart.
+  const funnelData = funnel
+    ? [
+        { stage: 'Started', Count: funnel.started },
+        { stage: 'Converted', Count: funnel.converted },
+        { stage: 'Expired', Count: funnel.expired },
+      ]
+    : []
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Trials</h2>
-
-      <TimeRangePicker
-        onSelectRange={(r) => setRange({ range: r })}
-        onSelectInterval={(i) => setRange({ interval: i })}
-        currentInterval={interval}
-      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard
@@ -72,6 +67,46 @@ export function TrialsReport() {
       </div>
 
       <ChartContainer
+        title="Trial Funnel"
+        chartConfig={{
+          name: 'Trial Funnel',
+          metric: 'trials',
+          endpoint: '/api/metrics/trials/funnel',
+          params: { start, end },
+          chartType: 'bar',
+          timeRangeMode: 'fixed',
+        }}
+      >
+        <BarBreakdownChart
+          data={funnelData}
+          bars={['Count']}
+          xKey="stage"
+          formatter={formatNumber}
+          loading={funnelLoading}
+        />
+      </ChartContainer>
+
+      <ChartContainer
+        title="Monthly Trial Outcomes"
+        chartConfig={{
+          name: 'Monthly Trial Outcomes',
+          metric: 'trials',
+          endpoint: '/api/metrics/trials/series',
+          params: { start, end, interval },
+          chartType: 'stacked_bar',
+          timeRangeMode: 'fixed',
+        }}
+      >
+        <BarBreakdownChart
+          data={outcomesSeries}
+          bars={['Converted', 'Expired', 'Pending']}
+          formatter={formatNumber}
+          loading={seriesLoading}
+          stacked
+        />
+      </ChartContainer>
+
+      <ChartContainer
         title="Trial Conversion Rate"
         chartConfig={{
           name: 'Trial Conversion Rate',
@@ -83,10 +118,10 @@ export function TrialsReport() {
         }}
       >
         <TimeSeriesChart
-          data={seriesData}
+          data={conversionSeries}
           dataKey="conversion_rate"
           formatter={formatPercent}
-          color={COLORS.arpu}
+          color={COLORS.converted}
           loading={seriesLoading}
         />
       </ChartContainer>

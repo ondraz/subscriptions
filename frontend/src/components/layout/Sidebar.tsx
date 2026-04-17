@@ -9,6 +9,7 @@ import {
   BarChart3,
   Settings,
 } from 'lucide-react'
+import { GlobalTimeRangePicker } from '@/components/controls/GlobalTimeRangePicker'
 
 const navItems = [
   { to: '/', icon: BarChart3, label: 'Overview' },
@@ -65,6 +66,7 @@ export function Sidebar() {
         </div>
         <NavItem to="/settings/api-keys" icon={Settings} label="API Keys" />
       </nav>
+      <GlobalTimeRangePicker />
     </aside>
   )
 }

@@ -6,26 +6,33 @@ import { CohortHeatmap } from '@/components/charts/CohortHeatmap'
 import { KPICard } from '@/components/charts/KPICard'
 import { formatCurrency, formatPercent } from '@/lib/formatters'
 import { resolveRelativeRange } from '@/lib/constants'
-import type { ChartConfig, WaterfallEntry, CohortEntry, TimeSeriesPoint } from '@/lib/types'
+import type { ChartConfig, Interval, WaterfallEntry, CohortEntry, TimeSeriesPoint } from '@/lib/types'
 
 interface DynamicChartProps {
   config: ChartConfig
+  inherited?: { start: string; end: string; interval?: Interval }
 }
 
-export function DynamicChart({ config }: DynamicChartProps) {
+export function DynamicChart({ config, inherited }: DynamicChartProps) {
   // Resolve time range
   let start = config.params.start
   let end = config.params.end
+  let interval = config.params.interval
   if (config.timeRangeMode === 'relative' && config.relativeRange) {
     const resolved = resolveRelativeRange(config.relativeRange)
     start = resolved.start
     end = resolved.end
+  } else if (config.timeRangeMode === 'inherit' && inherited) {
+    start = inherited.start
+    end = inherited.end
+    if (inherited.interval) interval = inherited.interval
   }
 
   const params = {
     ...config.params,
     start,
     end,
+    interval,
     dimensions: config.dimensions,
     filters: config.filters,
   }

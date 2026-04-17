@@ -113,3 +113,41 @@ export interface CohortEntry {
   retention_rate: number
   months_since: number
 }
+
+export interface ChurnCustomerDetail {
+  customer_id: string
+  customer_name: string | null
+  active_at_start: boolean
+  fully_churned: boolean
+  churned_mrr_cents: number
+  starting_mrr_cents: number
+}
+
+export interface ChurnRevenueEvent {
+  customer_id: string
+  customer_name: string | null
+  mrr_cents: number
+  events: number
+}
+
+export interface CohortLTVEntry {
+  cohort_month: string
+  customer_count: number
+  total_revenue: number
+  avg_revenue_per_customer: number
+}
+
+export interface TrialFunnel {
+  started: number
+  converted: number
+  expired: number
+  conversion_rate: number | null
+}
+
+export interface TrialSeriesRow {
+  period: string
+  started: number
+  converted: number
+  expired: number
+  conversion_rate: number | null
+}

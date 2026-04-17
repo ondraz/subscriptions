@@ -1,7 +1,7 @@
 # Cubes & Query Algebra
 
 > Declarative query building: cubes define what's queryable, algebraic fragments compose queries.
-> Last updated: March 2026
+> Last updated: April 2026
 
 ## Overview
 
@@ -105,8 +105,6 @@ class QueryFragment:
     filters: tuple[FilterExpr, ...] = ()
     joins: frozenset[str] = frozenset()         # join names needed
     time_grain: TimeGrainExpr | None = None
-    extra_group_by: tuple[str, ...] = ()        # non-dimension GROUP BY
-    order_by: tuple[str, ...] = ()
 
     def __add__(self, other: QueryFragment) -> QueryFragment:
         """Merge two fragments. Joins are unioned, time_grain uses first non-None."""
@@ -118,8 +116,6 @@ class QueryFragment:
             filters=self.filters + other.filters,
             joins=self.joins | other.joins,
             time_grain=self.time_grain or other.time_grain,
-            extra_group_by=self.extra_group_by + other.extra_group_by,
-            order_by=self.order_by + other.order_by,
         )
 ```
 
@@ -183,56 +179,20 @@ model.where("s.mrr_base_cents", ">", 0)
 
 1. **FROM** — `SELECT ... FROM {source} AS {alias}`
 2. **Resolve joins** — collect all join names from the fragment, topologically sort by `depends_on`, emit `JOIN` clauses. Deduplication is automatic (joins are a `frozenset`).
-3. **Add measures** — aggregation expressions in SELECT (`SUM(...)`, `COUNT(DISTINCT ...)`)
-4. **Add dimensions** — column expressions in SELECT and GROUP BY
-5. **Add time grain** — `DATE_TRUNC(granularity, column) AS period` in SELECT and GROUP BY
-6. **Add filters** — WHERE clauses with bound parameters
-7. **Add ORDER BY** — if specified
+3. **Add time grain** — `DATE_TRUNC(granularity, column) AS period` in SELECT and GROUP BY (first so `period` leads the projection).
+4. **Add dimensions** — column expressions in SELECT and GROUP BY.
+5. **Add measures** — aggregation expressions in SELECT (`SUM(...)`, `COUNT(DISTINCT ...)`, `COUNT(...)`, `AVG(...)`).
+6. **Add filters** — WHERE clauses with bound parameters.
 
-```python
-def compile(self, model: type[Cube]) -> tuple[Select, dict[str, Any]]:
-    """Resolve the fragment against its model and emit SQLAlchemy Select + params."""
-    source_table = table(self.source).alias(self.alias)
-    stmt = select().select_from(source_table)
-    params = {}
+There is no ORDER BY in the algebra — ordering is handled by the caller or by post-processing in the metric. Also note: aggregates are emitted as raw `SUM(col)` / `COUNT(DISTINCT col)` — no unit conversion happens in the compiler (cents-to-dollars is the caller's responsibility).
 
-    # 1. Resolve and add joins in dependency order
-    for join_name in _topological_sort(self.joins, model.Joins):
-        join_def = getattr(model.Joins, join_name)
-        target, on_clause = join_def.to_sqlalchemy()
-        stmt = stmt.join(target, on_clause)
-
-    # 2. Add measures
-    for m in self.measures:
-        stmt = stmt.add_columns(m.to_sqlalchemy())
-
-    # 3. Add dimensions (SELECT + GROUP BY)
-    for d in self.dimensions:
-        col = d.to_sqlalchemy()
-        stmt = stmt.add_columns(col).group_by(col)
-
-    # 4. Add time grain
-    if self.time_grain:
-        trunc = func.date_trunc(
-            self.time_grain.granularity,
-            literal_column(self.time_grain.column),
-        ).label("period")
-        stmt = stmt.add_columns(trunc).group_by(trunc)
-
-    # 5. Add filters
-    for f in self.filters:
-        clause, f_params = f.to_sqlalchemy()
-        stmt = stmt.where(clause)
-        params.update(f_params)
-
-    return stmt, params
-```
+A `to_sql(model)` helper compiles the statement against the PostgreSQL dialect and inline-substitutes bind parameters, which is useful for notebooks and SQL logging.
 
 ## Concrete Cubes
 
-These are the cubes for the project's [metric tables](database.md#metric-tables). Each maps a fact table to its available joins, measures, and dimensions.
+These are the cubes for the project's [metric tables](database.md#metric-tables). Each maps a fact table to its available joins, measures, and dimensions. Every cube lives next to its metric (e.g., `tidemill/metrics/mrr/cubes.py`, `tidemill/metrics/churn/cubes.py`).
 
-Dimensions sourced from Stripe API objects: Customer (`address.country`), Subscription (`status`, `collection_method`, `cancel_at_period_end`, `cancellation_details`), Price/Plan (`interval`, `interval_count`, `billing_scheme`, `usage_type`), Product (`name`). See [Stripe API mapping](#stripe-api-mapping) below for the full field comparison.
+Dimensions sourced from Stripe API objects: Customer (`name`, `address.country`), Subscription (`status`, `collection_method`, `cancel_at_period_end`, `cancellation_details`), Price/Plan (`interval`, `interval_count`, `billing_scheme`, `usage_type`), Product (`name`). See [Stripe API mapping](#stripe-api-mapping) below for the full field comparison.
 
 ### MRR Snapshot Cube
 
@@ -256,6 +216,7 @@ class MRRSnapshotCube(Cube):
         mrr = Sum("s.mrr_base_cents", label="mrr")
         mrr_original = Sum("s.mrr_cents", label="mrr_original")
         count = CountDistinct("s.subscription_id", label="subscription_count")
+        customer_count = CountDistinct("s.customer_id", label="customer_count")
 
     class Dimensions:
         source_id = Dim("s.source_id")
@@ -269,6 +230,7 @@ class MRRSnapshotCube(Cube):
         # Product (subscription → plan → product)
         product_name = Dim("prod.name", join="product", label="product_name")
         # Customer
+        customer_name = Dim("c.name", join="customer", label="customer_name")
         customer_country = Dim("c.country", join="customer", label="customer_country")
         # Subscription attributes
         collection_method = Dim("sub.collection_method", join="subscription")
@@ -277,6 +239,8 @@ class MRRSnapshotCube(Cube):
     class TimeDimensions:
         snapshot_at = TimeDim("s.snapshot_at")
 ```
+
+The `customer_count` measure exists so LTV/ARPU queries can compute `SUM(mrr) / COUNT(DISTINCT customer_id)` in a single trip to the DB.
 
 ### MRR Movement Cube
 
@@ -303,6 +267,7 @@ class MRRMovementCube(Cube):
 
     class Dimensions:
         source_id = Dim("m.source_id")
+        customer_id = Dim("m.customer_id")
         currency = Dim("m.currency")
         movement_type = Dim("m.movement_type")
         plan_id = Dim("sub.plan_id", join="subscription")
@@ -311,6 +276,7 @@ class MRRMovementCube(Cube):
         billing_scheme = Dim("p.billing_scheme", join="plan")
         usage_type = Dim("p.usage_type", join="plan")
         product_name = Dim("prod.name", join="product", label="product_name")
+        customer_name = Dim("c.name", join="customer", label="customer_name")
         customer_country = Dim("c.country", join="customer", label="customer_country")
         collection_method = Dim("sub.collection_method", join="subscription")
 
@@ -318,17 +284,45 @@ class MRRMovementCube(Cube):
         occurred_at = TimeDim("m.occurred_at")
 ```
 
+### Churn Customer State Cube
+
+```python
+class ChurnCustomerStateCube(Cube):
+    """Active/churned state per customer. Updated by subscription events."""
+    __source__ = "metric_churn_customer_state"
+    __alias__ = "cs"
+
+    class Joins:
+        customer = Join("customer", alias="c",
+            on="c.source_id = cs.source_id AND c.external_id = cs.customer_id")
+
+    class Measures:
+        count = CountDistinct("cs.customer_id", label="customer_count")
+
+    class Dimensions:
+        source_id = Dim("cs.source_id")
+        customer_id = Dim("cs.customer_id")
+        customer_name = Dim("c.name", join="customer", label="customer_name")
+        customer_country = Dim("c.country", join="customer", label="customer_country")
+
+    class TimeDimensions:
+        first_active_at = TimeDim("cs.first_active_at")
+        churned_at = TimeDim("cs.churned_at")
+```
+
 ### Churn Event Cube
 
 ```python
 class ChurnEventCube(Cube):
-    """Churn events for rate calculation. No subscription_id — joins via customer only."""
+    """Individual churn events for rate calculation."""
     __source__ = "metric_churn_event"
     __alias__ = "ce"
 
     class Joins:
         customer = Join("customer", alias="c",
             on="c.source_id = ce.source_id AND c.external_id = ce.customer_id")
+        customer_state = Join("metric_churn_customer_state", alias="cs",
+            on="cs.source_id = ce.source_id AND cs.customer_id = ce.customer_id")
 
     class Measures:
         count = Count("*", label="churn_count")
@@ -336,13 +330,20 @@ class ChurnEventCube(Cube):
 
     class Dimensions:
         source_id = Dim("ce.source_id")
+        customer_id = Dim("ce.customer_id")
         churn_type = Dim("ce.churn_type")
         cancel_reason = Dim("ce.cancel_reason")               # from cancellation_details.reason
-        customer_country = Dim("c.country", join="customer")
+        customer_name = Dim("c.name", join="customer", label="customer_name")
+        customer_country = Dim("c.country", join="customer", label="customer_country")
+        # Scopes churn events to customers active at period start
+        customer_first_active = Dim("cs.first_active_at", join="customer_state",
+            label="customer_first_active")
 
     class TimeDimensions:
         occurred_at = TimeDim("ce.occurred_at")
 ```
+
+The `customer_state` join plus the `customer_first_active` dimension let the churn metric restrict events to customers who were already active before the measurement window — essential for correct logo-churn denominators.
 
 ### Retention Cohort Cube
 
@@ -364,13 +365,79 @@ class RetentionCohortCube(Cube):
 
     class Dimensions:
         source_id = Dim("rc.source_id")
+        customer_id = Dim("rc.customer_id")
         cohort_month = Dim("rc.cohort_month")
         active_month = Dim("ra.active_month", join="activity")
-        customer_country = Dim("c.country", join="customer")
+        customer_country = Dim("c.country", join="customer", label="customer_country")
 
     class TimeDimensions:
         cohort_month_time = TimeDim("rc.cohort_month")
 ```
+
+### LTV Invoice Cube
+
+```python
+class LtvInvoiceCube(Cube):
+    """Append-only log of paid invoices. Used for cohort LTV and revenue tracking."""
+    __source__ = "metric_ltv_invoice"
+    __alias__ = "li"
+
+    class Joins:
+        customer = Join("customer", alias="c",
+            on="c.source_id = li.source_id AND c.external_id = li.customer_id")
+        cohort = Join("metric_retention_cohort", alias="rc",
+            on="rc.source_id = li.source_id AND rc.customer_id = li.customer_id")
+
+    class Measures:
+        total_revenue = Sum("li.amount_base_cents", label="total_revenue")
+        total_revenue_original = Sum("li.amount_cents", label="total_revenue_original")
+        invoice_count = Count("*", label="invoice_count")
+        customer_count = CountDistinct("li.customer_id", label="customer_count")
+
+    class Dimensions:
+        source_id = Dim("li.source_id")
+        customer_id = Dim("li.customer_id")
+        currency = Dim("li.currency")
+        customer_country = Dim("c.country", join="customer", label="customer_country")
+        cohort_month = Dim("rc.cohort_month", join="cohort", label="cohort_month")
+
+    class TimeDimensions:
+        paid_at = TimeDim("li.paid_at")
+```
+
+The `cohort` join reaches `metric_retention_cohort` — the same table used by the retention metric — so LTV and retention share cohort definitions. Cohort LTV currently computes cohort membership in Python (`movement_type = 'new'` in `MRRMovementCube`) for flexibility; the `cohort_month` dimension is available but unused by the default cohort-LTV query.
+
+### Trial Cube
+
+```python
+class TrialCube(Cube):
+    """Per-trial outcomes. Cohort = month of started_at."""
+    __source__ = "metric_trial"
+    __alias__ = "t"
+
+    class Joins:
+        customer = Join("customer", alias="c",
+            on="c.source_id = t.source_id AND c.external_id = t.customer_id")
+
+    class Measures:
+        # count(*) counts all rows; count(col) counts non-null values.
+        # Every row has started_at, so started_count == count(*).
+        started_count = Count("*", label="started")
+        converted_count = Count("t.converted_at", label="converted")
+        expired_count = Count("t.expired_at", label="expired")
+        customer_count = CountDistinct("t.customer_id", label="customer_count")
+
+    class Dimensions:
+        source_id = Dim("t.source_id")
+        customer_country = Dim("c.country", join="customer", label="customer_country")
+
+    class TimeDimensions:
+        started_at = TimeDim("t.started_at")
+        converted_at = TimeDim("t.converted_at")
+        expired_at = TimeDim("t.expired_at")
+```
+
+Trial metrics are **cohort-based**: the funnel measures (`started`, `converted`, `expired`) are derived from `COUNT(*)` and `COUNT(<timestamp>)` over the same row set, filtered by `started_at`. A trial that starts in January and converts in March is attributed to the January cohort regardless of when the conversion lands.
 
 ## Stripe API Mapping
 
@@ -582,39 +649,23 @@ class QuerySpec:
     # Time bucketing
     granularity: str | None = None        # day | week | month | quarter | year
     time_range: tuple[str, str] | None = None
-
-    def validate_against(self, model: type[Cube]) -> None:
-        """Validate that all referenced dimensions exist in the model. Raises ValueError."""
-        available = model.available_dimensions()
-        for d in self.dimensions:
-            if d not in available:
-                raise ValueError(
-                    f"Unknown dimension '{d}'. Available: {sorted(available)}"
-                )
-        for f in self.filters:
-            if f not in available:
-                raise ValueError(
-                    f"Cannot filter on unknown dimension '{f}'. "
-                    f"Available: {sorted(available)}"
-                )
 ```
 
-The model's `apply_spec()` method translates a `QuerySpec` into a composed fragment:
+The model's `apply_spec()` method translates a `QuerySpec` into a composed fragment. Validation happens inside `Cube.dimension()`, `Cube.filter()`, and `Cube.time_grain()` — each raises `ValueError` with the list of available names when given an unknown one.
 
 ```python
 @classmethod
 def apply_spec(cls, spec: QuerySpec | None) -> QueryFragment:
     """Translate a QuerySpec into a composed QueryFragment."""
-    if not spec:
+    if spec is None:
         return QueryFragment()
 
-    spec.validate_against(cls)
     result = QueryFragment()
 
-    for dim_name in spec.dimensions:
+    for dim_name in spec.dimensions or []:
         result = result + cls.dimension(dim_name)
 
-    for field_name, value in spec.filters.items():
+    for field_name, value in (spec.filters or {}).items():
         if isinstance(value, dict):
             op = next(iter(value))
             result = result + cls.filter(field_name, op, value[op])
@@ -622,7 +673,7 @@ def apply_spec(cls, spec: QuerySpec | None) -> QueryFragment:
             result = result + cls.filter(field_name, "=", value)
 
     if spec.granularity:
-        time_dims = cls.available_time_dimensions()
+        time_dims = sorted(cls._time_dimensions)
         if time_dims:
             result = result + cls.time_grain(time_dims[0], spec.granularity)
 
@@ -662,6 +713,8 @@ ValueError: Unknown dimension 'plan_name'. Available: ['currency', 'customer_cou
 
 ## SQL Examples
 
+Money values are stored as cents (integer); the compiler does not divide — cents-to-dollars conversion is the caller's responsibility.
+
 ### No spec — plain aggregate
 
 ```python
@@ -669,7 +722,7 @@ q = model.measures.mrr + model.where("s.mrr_base_cents", ">", 0)
 ```
 
 ```sql
-SELECT SUM(s.mrr_base_cents) / 100.0 AS mrr
+SELECT SUM(s.mrr_base_cents) AS mrr
 FROM metric_mrr_snapshot s
 WHERE s.mrr_base_cents > 0
 ```
@@ -681,7 +734,7 @@ q = model.measures.mrr + model.where("s.mrr_base_cents", ">", 0) + model.filter(
 ```
 
 ```sql
-SELECT SUM(s.mrr_base_cents) / 100.0 AS mrr
+SELECT SUM(s.mrr_base_cents) AS mrr
 FROM metric_mrr_snapshot s
   JOIN subscription sub ON sub.source_id = s.source_id
                        AND sub.external_id = s.subscription_id
@@ -700,7 +753,7 @@ q = (model.measures.mrr + model.where("s.mrr_base_cents", ">", 0)
 ```sql
 SELECT p.interval AS plan_interval,
        c.country AS customer_country,
-       SUM(s.mrr_base_cents) / 100.0 AS mrr
+       SUM(s.mrr_base_cents) AS mrr
 FROM metric_mrr_snapshot s
   JOIN subscription sub ON sub.source_id = s.source_id
                        AND sub.external_id = s.subscription_id
@@ -723,14 +776,14 @@ q = (model.measures.mrr + model.where("s.mrr_base_cents", ">", 0)
 ```sql
 SELECT DATE_TRUNC('month', s.snapshot_at) AS period,
        sub.plan_id,
-       SUM(s.mrr_base_cents) / 100.0 AS mrr
+       SUM(s.mrr_base_cents) AS mrr
 FROM metric_mrr_snapshot s
   JOIN subscription sub ON sub.source_id = s.source_id
                        AND sub.external_id = s.subscription_id
   JOIN customer c ON c.source_id = s.source_id
                  AND c.external_id = s.customer_id
 WHERE s.mrr_base_cents > 0
-  AND c.country = ANY(:customer_country)
+  AND c.country IN :customer_country
 GROUP BY DATE_TRUNC('month', s.snapshot_at), sub.plan_id
 ```
 
@@ -745,13 +798,15 @@ q = (mm.measures.amount + mm.dimension("movement_type") + mm.dimension("plan_id"
 ```sql
 SELECT m.movement_type,
        sub.plan_id,
-       SUM(m.amount_base_cents) / 100.0 AS amount_base
+       SUM(m.amount_base_cents) AS amount_base
 FROM metric_mrr_movement m
   JOIN subscription sub ON sub.source_id = m.source_id
                        AND sub.external_id = m.subscription_id
-WHERE m.occurred_at BETWEEN :start AND :end
+WHERE m.occurred_at BETWEEN :occurred_at_start AND :occurred_at_end
 GROUP BY m.movement_type, sub.plan_id
 ```
+
+`between` binds two parameters using the dimension name as the prefix (here `occurred_at_start` / `occurred_at_end`). Equality and `in` filters use `:<dimension_name>`; other raw `where(...)` calls derive a parameter name from the column and operator (e.g. `s_mrr_base_cents_gt`).
 
 ## Implementation Notes
 
@@ -763,14 +818,19 @@ The cube machinery lives in `tidemill/metrics/query.py` — the same file that m
 
 ```
 tidemill/metrics/
-├── __init__.py          # Metric base class + registry + QuerySpec
+├── __init__.py          # re-exports Metric, QuerySpec, register, ...
+├── base.py              # Metric ABC + QuerySpec
 ├── query.py             # Cube, QueryFragment, compilation
-├── mrr/                 # MRRSnapshotCube, MRRMovementCube, MrrMetric
-├── churn/               # ChurnEventCube, ChurnMetric
-├── retention/           # RetentionCohortCube, RetentionMetric
-├── ltv.py               # LTV cubes + metric
-└── trials.py            # Trial cubes + metric
+├── registry.py          # @register decorator, discovery, dependency resolution
+├── route_helpers.py     # Shared FastAPI helpers (parse_spec, query_metric)
+├── mrr/                 # MRRSnapshotCube, MRRMovementCube, MrrMetric, routes
+├── churn/               # ChurnCustomerStateCube, ChurnEventCube, ChurnMetric, routes
+├── retention/           # RetentionCohortCube, RetentionMetric, routes
+├── ltv/                 # LtvInvoiceCube, LtvMetric, routes
+└── trials/              # TrialCube, TrialsMetric, routes
 ```
+
+Each metric subpackage contains `cubes.py`, `metric.py`, `routes.py`, `tables.py`, and `__init__.py`.
 
 ### SQLAlchemy Integration
 

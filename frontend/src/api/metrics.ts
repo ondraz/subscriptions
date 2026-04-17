@@ -38,6 +38,10 @@ export function fetchMRR<T>(params: MetricParams = {}): Promise<T> {
   return fetchMetric<T>('/api/metrics/mrr', params)
 }
 
+export function fetchARR<T>(params: MetricParams = {}): Promise<T> {
+  return fetchMetric<T>('/api/metrics/arr', params)
+}
+
 export function fetchMRRBreakdown<T>(params: MetricParams = {}): Promise<T> {
   return fetchMetric<T>('/api/metrics/mrr/breakdown', params)
 }
@@ -50,6 +54,14 @@ export function fetchChurn<T>(params: MetricParams = {}): Promise<T> {
   return fetchMetric<T>('/api/metrics/churn', params)
 }
 
+export function fetchChurnCustomers<T>(params: MetricParams = {}): Promise<T> {
+  return fetchMetric<T>('/api/metrics/churn/customers', params)
+}
+
+export function fetchChurnRevenueEvents<T>(params: MetricParams = {}): Promise<T> {
+  return fetchMetric<T>('/api/metrics/churn/revenue-events', params)
+}
+
 export function fetchRetention<T>(params: MetricParams = {}): Promise<T> {
   return fetchMetric<T>('/api/metrics/retention', params)
 }
@@ -58,8 +70,24 @@ export function fetchLTV<T>(params: MetricParams = {}): Promise<T> {
   return fetchMetric<T>('/api/metrics/ltv', params)
 }
 
+export function fetchARPU<T>(params: MetricParams = {}): Promise<T> {
+  return fetchMetric<T>('/api/metrics/ltv/arpu', params)
+}
+
+export function fetchCohortLTV<T>(params: MetricParams = {}): Promise<T> {
+  return fetchMetric<T>('/api/metrics/ltv/cohort', params)
+}
+
 export function fetchTrials<T>(params: MetricParams = {}): Promise<T> {
   return fetchMetric<T>('/api/metrics/trials', params)
+}
+
+export function fetchTrialFunnel<T>(params: MetricParams = {}): Promise<T> {
+  return fetchMetric<T>('/api/metrics/trials/funnel', params)
+}
+
+export function fetchTrialSeries<T>(params: MetricParams = {}): Promise<T> {
+  return fetchMetric<T>('/api/metrics/trials/series', params)
 }
 
 export function fetchSummary<T>(): Promise<T> {

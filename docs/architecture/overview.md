@@ -92,9 +92,10 @@ For open-source billing engines that expose their PostgreSQL, this eliminates th
 tidemill/
 ├── __init__.py              # Public API: MetricsEngine, connectors
 ├── engine.py                # MetricsEngine — routes queries to metrics
-├── models.py                # SQLAlchemy models + Pydantic schemas
+├── models.py                # SQLAlchemy Core tables (billing entities)
 ├── database.py              # Database connection and session management
 ├── events.py                # Internal event schema (dataclasses)
+├── fx.py                    # Foreign-exchange rate conversion
 ├── bus.py                   # Kafka producer/consumer wrappers (ingestion mode only)
 ├── state.py                 # Core consumer: events → base tables (ingestion mode only)
 ├── connectors/
@@ -104,18 +105,26 @@ tidemill/
 │   ├── lago.py              # Lago database connector (same-database mode)
 │   └── killbill.py          # Kill Bill database connector (same-database mode)
 ├── metrics/
-│   ├── __init__.py          # Metric base class + registry
-│   ├── mrr.py               # P0: MRR (MRR, ARR, net new MRR)
-│   ├── churn.py             # P0: Churn (logo, revenue, net revenue)
-│   ├── retention.py         # P0: Retention (cohorts, NRR, GRR)
-│   ├── ltv.py               # P1: LTV (LTV, ARPU)
-│   └── trials.py            # P1: Trials (conversion rate)
+│   ├── __init__.py          # re-exports Metric, QuerySpec, registry
+│   ├── base.py              # Metric ABC + QuerySpec
+│   ├── query.py             # Cube, QueryFragment, compilation
+│   ├── registry.py          # @register, discovery, dependency resolution
+│   ├── route_helpers.py     # Shared FastAPI helpers
+│   ├── mrr/                 # P0: MRR (MRR, ARR, waterfall, breakdown, series)
+│   ├── churn/               # P0: Churn (logo, revenue, customers)
+│   ├── retention/           # P0: Retention (cohorts, NRR, GRR)
+│   ├── ltv/                 # P1: LTV (LTV, ARPU, cohort LTV)
+│   └── trials/              # P1: Trials (funnel, conversion rate)
+├── reports/                 # Pre-built charts + styled tables for each metric
 ├── cli/
 │   ├── __init__.py
 │   └── main.py              # CLI entry point (P0)
 └── api/
     ├── __init__.py
-    └── app.py               # FastAPI facade
+    ├── app.py               # FastAPI app — mounts per-metric routers
+    ├── deps.py              # Auth dependencies
+    ├── schemas.py           # Pydantic response schemas
+    └── routers/             # health, auth, metrics, sources, webhooks, ...
 ```
 
 ## Technology Choices

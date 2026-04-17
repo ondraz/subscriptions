@@ -16,16 +16,16 @@
 ## Quick start
 
 ```python
-from tidemill.reports import setup, mrr, churn, retention, ltv, trials
+from tidemill import reports
 from tidemill.reports.client import TidemillClient
 
-setup()                          # activate Tidemill Plotly template
+reports.setup()                  # activate Tidemill Plotly template
 tm = TidemillClient()            # reads TIDEMILL_API env var
 
 # Data → style → chart (each layer is independent)
-df = mrr.waterfall(tm, "2025-09-01", "2026-04-30")
-mrr.style_waterfall(df)          # styled table
-mrr.plot_waterfall(df)           # Plotly figure
+df = reports.mrr.waterfall(tm, "2025-09-01", "2026-04-30")
+reports.mrr.style_waterfall(df)   # styled table
+reports.mrr.plot_waterfall(df)    # Plotly figure
 ```
 
 ## Environment variables
@@ -40,7 +40,8 @@ mrr.plot_waterfall(df)           # Plotly figure
 ### `tidemill.reports` (package)
 
 ```python
-from tidemill.reports import setup, mrr, churn, retention, ltv, trials
+from tidemill import reports
+from tidemill.reports import setup, TidemillClient, mrr, churn, retention, ltv, trials
 ```
 
 `setup()` registers and activates the Tidemill Plotly template (`simple_white+tidemill`). Call it once at the top of a notebook or script.
@@ -53,13 +54,16 @@ from tidemill.reports import setup, mrr, churn, retention, ltv, trials
 
 | Method | Returns |
 |--------|---------|
+| `get(path, **params)` | Generic GET — parsed JSON |
 | `mrr(at=None)` | MRR in cents |
 | `arr(at=None)` | ARR in cents |
 | `mrr_breakdown(start, end)` | List of movement dicts |
 | `mrr_waterfall(start, end)` | List of monthly waterfall dicts |
 | `churn(start, end, type="logo")` | Churn rate (float or None) |
 | `churn_customers(start, end)` | Per-customer churn detail |
-| `retention(start, end, **kw)` | Cohort retention data |
+| `churn_revenue_events(start, end)` | Per-customer revenue-churn events for active-at-start customers |
+| `retention(start, end, **kw)` | Cohort retention data (pass `query_type="nrr"` / `"grr"` / `"cohort_matrix"`) |
+| `cohort_matrix(start, end)` | Cohort matrix rows — one per (`cohort_month`, `active_month`) |
 | `ltv(start, end)` | Simple LTV in cents |
 | `arpu(at=None)` | ARPU in cents |
 | `cohort_ltv(start, end)` | Per-cohort LTV breakdown |
@@ -72,23 +76,27 @@ from tidemill.reports import setup, mrr, churn, retention, ltv, trials
 
 ### `tidemill.reports.mrr`
 
-MRR breakdown, waterfall, and trend charts.
+MRR snapshot, breakdown, quick ratio, waterfall, per-customer movement log, and trend.
 
 #### Data functions
 
 | Function | Inputs | Returns |
 |----------|--------|---------|
+| `snapshot(tm, at=None)` | `TidemillClient`, optional ISO date | `dict` with `mrr`, `arr` (dollars) |
 | `breakdown(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with `movement_type`, `amount_base`, `amount` |
+| `quick_ratio(tm, start, end)` | `TidemillClient`, ISO date range | `dict` with movement components, `gains`, `losses`, `quick_ratio` |
 | `waterfall(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with monthly starting/ending MRR and movements (dollars) |
-| `movement_log(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with per-customer daily movements |
+| `movement_log(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with per-customer daily movements (`month`, `date`, `customer_name`, `customer_id`, `movement_type`, `amount`) |
 | `trend(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with `month` and `ending_mrr` (dollars) |
 
 #### Style functions
 
 | Function | Input | Output |
 |----------|-------|--------|
-| `style_waterfall(df)` | DataFrame from `waterfall` | Styler |
-| `style_movement_log(df)` | DataFrame from `movement_log` | Styler |
+| `style_snapshot(data)` | dict from `snapshot` | Styler — MRR / ARR one-row table |
+| `style_waterfall(df)` | DataFrame from `waterfall` | Styler — monthly bridge |
+| `style_movement_log(df)` | DataFrame from `movement_log` | Styler with colour-coded movement types and monthly subtotals |
+| `style_quick_ratio(data)` | dict from `quick_ratio` | Styler — gains / losses / ratio |
 
 #### Chart functions
 
@@ -102,13 +110,15 @@ MRR breakdown, waterfall, and trend charts.
 
 ### `tidemill.reports.churn`
 
-Customer churn sets, monthly timelines, and lost MRR.
+Customer churn sets, snapshot, revenue-churn events, monthly timelines, and lost MRR.
 
 #### Data functions
 
 | Function | Inputs | Returns |
 |----------|--------|---------|
 | `customer_detail(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with per-customer churn detail (C_start / C_churned) |
+| `snapshot(tm, start, end, detail=None)` | `TidemillClient`, ISO date range, optional pre-fetched detail | `dict` with churn rates, counts, and MRR totals |
+| `revenue_events(tm, start, end, detail=None)` | `TidemillClient`, ISO date range, optional pre-fetched detail | `DataFrame` — one row per C_start customer with their churned MRR |
 | `timeline(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with `month`, `logo_churn`, `revenue_churn` (decimals) |
 | `monthly_lost_mrr(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with `month`, `churn_dollars` |
 
@@ -116,9 +126,11 @@ Customer churn sets, monthly timelines, and lost MRR.
 
 | Function | Input | Output |
 |----------|-------|--------|
+| `style_snapshot(data)` | dict from `snapshot` | Styler — logo + revenue churn rates with numerator / denominator |
 | `style_c_start(detail)` | DataFrame from `customer_detail` | Styler — customers active at period start with MRR |
 | `style_c_churned(detail)` | DataFrame from `customer_detail` | Styler — fully churned customers with lost MRR |
-| `style_timeline(df)` | DataFrame from `timeline` | Styler |
+| `style_revenue_events(df)` | DataFrame from `revenue_events` | Styler — per-customer revenue-churn table with totals |
+| `style_timeline(df)` | DataFrame from `timeline` | Styler — monthly churn rates |
 
 #### Chart functions
 
@@ -131,24 +143,27 @@ Customer churn sets, monthly timelines, and lost MRR.
 
 ### `tidemill.reports.retention`
 
-Monthly NRR and GRR tracking.
+Cohort retention matrix and monthly NRR / GRR tracking.
 
 #### Data functions
 
 | Function | Inputs | Returns |
 |----------|--------|---------|
+| `cohort(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` indexed by `cohort_month` with `cohort_size` and `M0 … Mn` retention columns (decimals) |
 | `nrr_grr(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with `month`, `nrr`, `grr` (decimals) |
 
 #### Style functions
 
 | Function | Input | Output |
 |----------|-------|--------|
-| `style_nrr_grr(df)` | DataFrame from `nrr_grr` | Styler |
+| `style_cohort(df)` | DataFrame from `cohort` | Styler — heatmap-like percentage table |
+| `style_nrr_grr(df)` | DataFrame from `nrr_grr` | Styler — monthly NRR / GRR |
 
 #### Chart functions
 
 | Function | Input | Chart type |
 |----------|-------|------------|
+| `plot_cohort(df)` | DataFrame from `cohort` | Heatmap — cohort retention over months since start |
 | `plot_nrr_grr(df)` | DataFrame from `nrr_grr` | Dual line — NRR + GRR with 100% reference |
 
 ---
@@ -162,23 +177,24 @@ ARPU, simple LTV, implied churn, and cohort LTV breakdowns.
 | Function | Inputs | Returns |
 |----------|--------|---------|
 | `overview(tm, start, end)` | `TidemillClient`, ISO date range | `dict` with `arpu`, `ltv` (dollars or None), `implied_churn` (decimal or None) |
-| `arpu_timeline(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with `month`, `arpu_dollars` |
+| `arpu_timeline(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with `month`, `active_customers`, `mrr_dollars`, `arpu_dollars` |
 | `cohort(tm, start, end)` | `TidemillClient`, ISO date range | `DataFrame` with `cohort_month`, `customer_count`, `avg_dollars`, `total_dollars` |
 
 #### Style functions
 
 | Function | Input | Output |
 |----------|-------|--------|
-| `style_overview(data)` | dict from `overview` | Styler |
-| `style_cohort(df)` | DataFrame from `cohort` | Styler |
+| `style_overview(data)` | dict from `overview` | Styler — ARPU, LTV, implied churn |
+| `style_arpu_timeline(df)` | DataFrame from `arpu_timeline` | Styler — monthly ARPU, MRR, active customers |
+| `style_cohort(df)` | DataFrame from `cohort` | Styler — per-cohort LTV |
 
 #### Chart functions
 
 | Function | Input | Chart type |
 |----------|-------|------------|
+| `plot_ltv_overview(data)` | dict from `overview` | Indicator — ARPU, churn rate, LTV |
 | `plot_arpu_timeline(df)` | DataFrame from `arpu_timeline` | Area line — monthly ARPU |
 | `plot_cohort(df)` | DataFrame from `cohort` | Dual bar — avg revenue + customer count per cohort |
-| `plot_ltv_overview(data)` | dict from `overview` | Bar — ARPU vs LTV |
 
 ---
 
@@ -213,36 +229,42 @@ Trial funnel, conversion rates, and monthly outcomes.
 
 ### Colour palette
 
-`tidemill.reports._style.COLORS` defines semantic colours used across all charts:
+`tidemill.reports._style.COLORS` defines semantic colours used across all charts. The palette is Tailwind-inspired and grouped by what each colour represents:
 
 | Key | Hex | Usage |
 |-----|-----|-------|
-| `new` | `#0D9488` | New MRR, active subscriptions, converted trials, GRR |
-| `expansion` | `#2563EB` | Expansion MRR, NRR |
-| `contraction` | `#D97706` | Contraction MRR, trialing subscriptions |
-| `churn` | `#DC2626` | Churned MRR, canceled subscriptions, expired trials |
-| `reactivation` | `#7C3AED` | Reactivation MRR, ARPU |
-| `starting_mrr` | `#94A3B8` | Starting MRR bar, grey/neutral |
+| `new` / `active` / `converted` / `grr` | `#16A34A` | Positive movements, active subs, converted trials, gross revenue retention |
+| `expansion` / `nrr` | `#2563EB` | Expansion MRR, net revenue retention |
+| `contraction` | `#EAB308` | Contraction MRR |
+| `trialing` | `#F59E0B` | Trialing subscriptions |
+| `past_due` | `#EA580C` | Past-due subscriptions |
+| `churn` / `canceled` / `expired` / `logo_churn` | `#DC2626` | Lost revenue, churned customers, expired trials |
+| `revenue_churn` | `#F59E0B` | Revenue churn (paired with logo churn) |
+| `reactivation` | `#8B5CF6` | Reactivation MRR |
+| `arpu` | `#8B5CF6` | ARPU lines / indicators |
+| `starting_mrr` / `pending` / `grey` | `#78716C` | Starting MRR, pending trials, neutral |
+
+A default multi-series `COLORWAY` is also defined, cycling through amber, blue, green, violet, red, cyan, pink, lime, and stone.
 
 ### Plotly template
 
 `setup()` registers a custom Plotly template (`simple_white+tidemill`) that provides:
 
-- **Typography:** Inter font family, slate colour scheme
-- **Layout:** centred titles, 820x520 default size, light grid lines
-- **Colour scales:** teal sequential scale for heatmaps
-- **Trace defaults:** `cliponaxis=False` on scatter and bar traces so data labels are never clipped at plot boundaries
+- **Typography:** Inter font family, stone-grey scheme (titles on `#1C1917`, body on `#44403C`)
+- **Layout:** centred titles, 820×520 default size, light stone grid lines, transparent legends
+- **Colour scales:** warm orange sequential scale for heatmaps / continuous data
+- **Trace defaults:** `cliponaxis=False` on scatter and bar traces so data labels are never clipped at plot boundaries; scatter line width 2.5, zero bar line width
 
 ---
 
 ## Notebooks
 
-The `docs/notebooks/` directory contains Jupyter notebooks that use the reports library — each cell is typically a single report call:
+The `docs/notebooks/` directory contains Jupyter notebooks that use the reports library — each code cell is typically a single report call:
 
-| Notebook | Metric |
-|----------|--------|
-| `01_mrr.ipynb` | MRR breakdown, waterfall, trend |
-| `02_churn.ipynb` | Customer churn sets, timeline, lost MRR |
-| `03_retention.ipynb` | NRR/GRR |
-| `04_ltv.ipynb` | LTV overview, ARPU timeline, cohort LTV |
-| `05_trials.ipynb` | Trial funnel, monthly outcomes |
+| Notebook | Metric | Uses |
+|----------|--------|------|
+| `01_mrr.ipynb` | MRR | snapshot, breakdown, quick_ratio, waterfall, movement_log, trend |
+| `02_churn.ipynb` | Churn | customer_detail (C_start / C_churned), snapshot, revenue_events, timeline, monthly_lost_mrr |
+| `03_retention.ipynb` | Retention | cohort matrix, NRR / GRR |
+| `04_ltv.ipynb` | LTV | overview, arpu_timeline, cohort |
+| `05_trials.ipynb` | Trials | funnel, timeline |

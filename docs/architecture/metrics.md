@@ -154,15 +154,19 @@ class MrrMetric(Metric):
 
 
 @register
-class QuickRatioMetric(Metric):
-    name = "quick_ratio"
+class RetentionMetric(Metric):
+    name = "retention"
     dependencies = ["mrr"]   # engine injects mrr metric at startup
-    event_types = []         # no direct event subscription — reads mrr tables
+    event_types = ["subscription.created", "subscription.activated",
+                   "subscription.churned", "subscription.reactivated"]
 
     async def query(self, params, spec=None):
-        # Queries metric_mrr_movement directly (injected via self.plugins["mrr"])
+        # NRR / GRR query metric_mrr_movement directly; cohort matrix reads
+        # metric_retention_cohort + metric_retention_activity.
         ...
 ```
+
+The Quick Ratio is **not** a registered metric — it is a pure derivation from MRR movements. It lives in the reports layer as `tidemill.reports.mrr.quick_ratio(tm, start, end)` and in the summary endpoint's post-processing.
 
 At startup, the engine:
 
@@ -740,21 +744,19 @@ class MetricsEngine:
     def __init__(
         self,
         db: AsyncSession,
-        connector: DatabaseConnector | None = None,
         metrics: list[Metric] | None = None,
     ):
         self.db = db
-        self.connector = connector
         # Auto-discover all @register metrics if none provided
-        raw = metrics or discover_metrics()
+        raw = metrics if metrics is not None else discover_metrics()
         # Resolve dependency order (topological sort); raises on cycles or missing deps
-        ordered = _resolve_dependencies(raw)
+        ordered = resolve_dependencies(raw)
         # Initialize in order, injecting resolved instances
         # (synchronous — no I/O, just wiring)
         self._metrics: dict[str, Metric] = {}
         for m in ordered:
             deps = {name: self._metrics[name] for name in m.dependencies}
-            m._init(db=db, connector=connector, deps=deps)
+            m.init(db=db, deps=deps)
             self._metrics[m.name] = m
 
     async def query(
@@ -766,8 +768,9 @@ class MetricsEngine:
         """Route a query to the named metric. Works for any registered metric —
         built-in or custom — without engine changes.
 
-        spec is validated against the metric's Cube before execution.
-        Invalid dimension/filter names raise ValueError with available options.
+        spec is validated against the metric's Cube inside the metric's query
+        methods. Invalid dimension/filter names raise ValueError with available
+        options.
         """
         if metric not in self._metrics:
             raise KeyError(f"No metric registered for '{metric}'. "
@@ -779,16 +782,17 @@ class MetricsEngine:
         return sorted(self._metrics)
 ```
 
+Same-database mode (Lago / Kill Bill) is reached by passing a `DatabaseConnector` into the specific metric's constructor or `init()` — not via the engine. Each metric decides how to dispatch between ingestion-mode reads (SQL against `metric_*` tables) and direct-query mode (via its connector).
+
 ### Usage
 
 ```python
-engine = MetricsEngine(db=async_session, connector=lago_connector)
+engine = MetricsEngine(db=async_session)
 
 # Any registered metric, any params — always awaited
 await engine.query("mrr", {"query_type": "current"})
 await engine.query("mrr", {"query_type": "series", "start": date(2025,1,1), "end": date(2026,1,1), "interval": "month"})
 await engine.query("churn", {"start": date(2026,1,1), "end": date(2026,3,1), "type": "revenue"})
-await engine.query("quick_ratio", {"start": date(2026,1,1), "end": date(2026,3,1)})
 
 # With dimensions and filters via QuerySpec
 spec = QuerySpec(
@@ -804,7 +808,7 @@ await engine.query("mrr", {"query_type": "current"},
 
 # Synchronous — no I/O
 engine.available_metrics()
-# ['churn', 'ltv', 'mrr', 'quick_ratio', 'retention', 'trials']
+# ['churn', 'ltv', 'mrr', 'retention', 'trials']
 ```
 
 The same `engine.query()` call is used from FastAPI, CLI, and Jupyter. The HTTP API maps URL path segments to metric names, query parameters to `params`, and dimension/filter parameters to `QuerySpec`.
@@ -883,43 +887,31 @@ class RetentionMetric(Metric):
 
 
 @register
-class QuickRatioMetric(Metric):
-    name = "quick_ratio"
-    model = MRRMovementCube
-    dependencies = ["mrr"]
+class LtvMetric(Metric):
+    name = "ltv"
+    model = LtvInvoiceCube
+    dependencies = ["mrr", "churn"]     # ARPU reads MRR snapshot; simple LTV uses churn rate
 
-    def _init(self, db, connector, deps):
+    def init(self, *, db, deps):
         self.db = db
         self.mrr = deps["mrr"]
+        self.churn = deps["churn"]
 
     async def query(self, params, spec=None):
-        m = self.model  # MRRMovementCube
-
-        q = (
-            m.measures.amount
-            + m.dimension("movement_type")
-            + m.filter("occurred_at", "between", (params["start"], params["end"]))
-        )
-
-        if spec:
-            q = q + m.apply_spec(spec)
-
-        stmt, bind = q.compile(m)
-        rows = (await self.db.execute(stmt, bind)).mappings().all()
-
-        by_type = {r["movement_type"]: r["amount_base"] for r in rows}
-        growth = sum(by_type.get(t, 0) for t in ("new", "expansion", "reactivation"))
-        loss   = abs(sum(by_type.get(t, 0) for t in ("churn", "contraction")))
-        return growth / loss if loss else None
+        # ARPU: queries MRRSnapshotCube (mrr + customer_count measures).
+        # Simple LTV: ARPU / logo_churn_rate — delegates to churn metric.
+        # Cohort LTV: MRRMovementCube for cohort assignment + LtvInvoiceCube for revenue.
+        ...
 ```
 
 Dependency graph for built-in metrics:
 
 ```
 mrr ──────────────────► retention (NRR/GRR query MRRSnapshotCube + MRRMovementCube)
-  └──────────────────► quick_ratio (queries MRRMovementCube)
   └──────────────────► ltv (ARPU queries MRRSnapshotCube.mrr + .customer_count)
 churn ─────────────────► ltv (simple LTV = ARPU / logo churn rate)
 ```
 
 Trials has no dependencies — it only processes its own events.
+
+Quick Ratio is **not** a registered metric. It's a post-processing derivation over MRR movements, exposed via `tidemill.reports.mrr.quick_ratio` and surfaced in the `/api/metrics/summary` response.

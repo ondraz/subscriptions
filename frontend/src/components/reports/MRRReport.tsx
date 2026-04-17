@@ -1,12 +1,10 @@
 import { useTimeRange } from '@/hooks/useTimeRange'
-import { useMRR, useMRRBreakdown, useMRRWaterfall } from '@/hooks/useMetrics'
-import { useMetric } from '@/hooks/useMetrics'
+import { useMRR, useMRRBreakdown, useMRRWaterfall, useARR } from '@/hooks/useMetrics'
 import { KPICard } from '@/components/charts/KPICard'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { MRRBreakdownChart } from '@/components/charts/MRRBreakdownChart'
 import { WaterfallChart } from '@/components/charts/WaterfallChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
-import { TimeRangePicker } from '@/components/controls/TimeRangePicker'
 import { DimensionPicker } from '@/components/controls/DimensionPicker'
 import { formatCurrency } from '@/lib/formatters'
 import { MRR_DIMENSIONS } from '@/lib/constants'
@@ -19,14 +17,13 @@ interface MRRSeriesRow {
 }
 
 export function MRRReport() {
-  const { start, end, interval, setRange } = useTimeRange({ range: 'last_1y' })
+  const { start, end, interval } = useTimeRange({ range: 'last_1y' })
   const [dimensions, setDimensions] = useState<string[]>([])
 
-  const seriesParams = { start, end, interval, dimensions }
-  const { data: breakdown, isLoading: breakdownLoading } = useMRRBreakdown<Record<string, unknown>[]>(seriesParams)
+  const { data: breakdown, isLoading: breakdownLoading } = useMRRBreakdown<Record<string, unknown>[]>({ start, end, dimensions })
   const { data: waterfall, isLoading: waterfallLoading } = useMRRWaterfall<WaterfallEntry[]>({ start, end })
   const { data: currentMrr, isLoading: mrrLoading } = useMRR<number>({})
-  const { data: currentArr, isLoading: arrLoading } = useMetric<number>('/api/metrics/arr', {})
+  const { data: currentArr, isLoading: arrLoading } = useARR<number>()
 
   // Fetch MRR movements from beginning of time so cumulative sum = MRR level
   const { data: mrrSeries, isLoading: seriesLoading } = useMRR<MRRSeriesRow[]>({
@@ -62,17 +59,21 @@ export function MRRReport() {
     Amount: breakdownMap.get(type) ?? 0,
   }))
 
+  // Quick Ratio = (new + expansion + reactivation) / |churn + contraction|.
+  const gains =
+    (breakdownMap.get('new') ?? 0) +
+    (breakdownMap.get('expansion') ?? 0) +
+    (breakdownMap.get('reactivation') ?? 0)
+  const losses =
+    Math.abs(breakdownMap.get('churn') ?? 0) +
+    Math.abs(breakdownMap.get('contraction') ?? 0)
+  const quickRatio = losses > 0 ? gains / losses : null
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Monthly Recurring Revenue</h2>
       </div>
-
-      <TimeRangePicker
-        onSelectRange={(r) => setRange({ range: r })}
-        onSelectInterval={(i) => setRange({ interval: i })}
-        currentInterval={interval}
-      />
 
       <DimensionPicker
         available={MRR_DIMENSIONS}
@@ -90,6 +91,12 @@ export function MRRReport() {
           title="ARR"
           value={currentArr != null ? formatCurrency(currentArr / 100) : '—'}
           loading={arrLoading}
+        />
+        <KPICard
+          title="Quick Ratio"
+          value={quickRatio != null ? quickRatio.toFixed(2) : '—'}
+          subtitle="(new+exp+react) ÷ |churn+contraction|"
+          loading={breakdownLoading}
         />
       </div>
 

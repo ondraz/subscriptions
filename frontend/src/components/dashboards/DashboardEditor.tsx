@@ -7,6 +7,7 @@ import {
   useDeleteSection,
   useRemoveChartFromDashboard,
 } from '@/hooks/useDashboards'
+import { useTimeRange } from '@/hooks/useTimeRange'
 import { DynamicChart } from '@/components/dashboards/DynamicChart'
 
 export function DashboardEditor() {
@@ -16,6 +17,7 @@ export function DashboardEditor() {
   const deleteSection = useDeleteSection(id!)
   const removeChart = useRemoveChartFromDashboard(id!)
   const [newSectionTitle, setNewSectionTitle] = useState('')
+  const { start, end, interval } = useTimeRange({ range: 'last_90d' })
 
   if (isLoading) {
     return <div className="text-muted-foreground">Loading dashboard...</div>
@@ -78,7 +80,10 @@ export function DashboardEditor() {
                     </button>
                   </div>
                   <div className="p-4">
-                    <DynamicChart config={entry.chart.config} />
+                    <DynamicChart
+                      config={entry.chart.config}
+                      inherited={{ start, end, interval }}
+                    />
                   </div>
                 </div>
               ))}
