@@ -673,10 +673,12 @@ joined in Python:
 
 **Subscribes to (ingestion mode):** `subscription.trial_started`, `subscription.trial_converted`, `subscription.trial_expired`
 
+Trial metrics are **cohort-based**: a trial is attributed to the period of its `started_at`, and its converted/expired outcome rolls up to the same cohort regardless of when the outcome event arrives.  Late conversions retroactively update the cohort's rate.
+
 **Tables:**
 
 ```sql
--- Append-only trial lifecycle events (idempotent via event_id)
+-- Append-only lifecycle log (audit / idempotent via event_id)
 CREATE TABLE metric_trial_event (
     id              UUID PRIMARY KEY,
     event_id        UUID NOT NULL UNIQUE,
@@ -686,31 +688,46 @@ CREATE TABLE metric_trial_event (
     event_type      TEXT NOT NULL,       -- started | converted | expired
     occurred_at     TIMESTAMPTZ NOT NULL
 );
+
+-- One row per trial.  Cohort queries aggregate over this table.
+CREATE TABLE metric_trial (
+    id              TEXT PRIMARY KEY,
+    source_id       TEXT NOT NULL,
+    customer_id     TEXT NOT NULL,
+    subscription_id TEXT NOT NULL,
+    started_at      TIMESTAMPTZ NOT NULL,
+    converted_at    TIMESTAMPTZ,
+    expired_at      TIMESTAMPTZ,
+    CONSTRAINT uq_trial_sub UNIQUE (source_id, subscription_id)
+);
 ```
 
 **Event handling:**
 
 ```python
-# Maps event types to trial event types:
-#   subscription.trial_started   → "started"
-#   subscription.trial_converted → "converted"
-#   subscription.trial_expired   → "expired"
-# Insert with ON CONFLICT (event_id) DO NOTHING
+# subscription.trial_started   → upsert started_at (LEAST of existing/new)
+# subscription.trial_converted → upsert converted_at (COALESCE — set once)
+# subscription.trial_expired   → upsert expired_at   (COALESCE — set once)
+# Each event is also appended to metric_trial_event (ON CONFLICT event_id DO NOTHING).
+# Out-of-order events are safe: a converted/expired arriving before started
+# inserts a placeholder row; the later started event corrects started_at.
 ```
 
 **Queries:**
 
-Conversion rate — groups by `event_type` via `TrialEventCube`, computes ratio in Python:
+Funnel — a single aggregate over `metric_trial` filtered by `started_at`:
 ```python
-by_type = {r["event_type"]: r["trial_count"] for r in rows}
-return by_type.get("converted", 0) / by_type.get("started", 0)
+q = (m.measures.started_count      # COUNT(*)
+   + m.measures.converted_count    # COUNT(converted_at) — non-null
+   + m.measures.expired_count      # COUNT(expired_at) — non-null
+   + m.filter("started_at", "between", (start, end)))
 ```
 
-Series — same grouping with `time_grain("occurred_at", interval)` for per-period breakdown.
+Conversion rate — `converted / started` from the funnel result.
 
-Funnel — counts per event_type with conversion rate: `{started, converted, expired, conversion_rate}`.
+Series — same aggregate with `time_grain("started_at", interval)` → one row per cohort month.
 
-**Cube:** `TrialEventCube` — measures: `count`, `customer_count`; dimensions: `source_id`, `event_type`, `customer_country` (via customer join).
+**Cube:** `TrialCube` — source `metric_trial`; measures: `started_count`, `converted_count`, `expired_count`, `customer_count`; dimensions: `source_id`, `customer_country` (via customer join); time dimensions: `started_at`, `converted_at`, `expired_at`.
 
 **API endpoints:** `GET /metrics/trials` (conversion rate), `GET /metrics/trials/series`, `GET /metrics/trials/funnel`
 

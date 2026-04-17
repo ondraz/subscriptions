@@ -167,11 +167,18 @@ $$
 
 ### Trial Conversion Rate
 
+Cohort-based: a trial is attributed to the period of its `trial_started` event, and its eventual outcome (converted or expired) rolls up to that same cohort — regardless of when the outcome occurs.
+
 $$
-\text{Trial Conversion Rate} = \frac{T_{\text{converted}}}{T_{\text{started}}}
+\text{Trial Conversion Rate} = \frac{T_{\text{converted}}(c)}{T_{\text{started}}(c)}
 $$
 
-where $T_{\text{started}}$ and $T_{\text{converted}}$ are counts of trial events in the period.
+where, for a cohort period $c = [\text{start}, \text{end})$:
+
+- $T_{\text{started}}(c)$ = trials with `started_at` $\in c$
+- $T_{\text{converted}}(c)$ = of those, trials with a non-null `converted_at` (at any time)
+
+A March conversion of a January-cohort trial updates January's rate. Recent periods may show pending trials (neither converted nor expired yet), so their rate will move as those trials reach a terminal state.
 
 ### Quick Ratio
 
@@ -231,11 +238,11 @@ Tidemill uses the current-period churn rate as the LTV denominator. ChartMogul u
 
 **Why we differ:** The trailing average is useful but opaque — it's unclear which months are included. Tidemill's approach is more transparent. We may add a configurable lookback window.
 
-### Trial Conversion — point-in-time vs retroactive
+### Trial Conversion — retroactive cohort model
 
-Tidemill counts conversions that occur within the query period. ChartMogul uses a **retroactive cohort model**: a trial started in January that converts in March updates January's conversion rate.
+Tidemill uses the same **retroactive cohort model** as ChartMogul: a trial started in January that converts in March updates January's conversion rate. The cohort is fixed by the `trial_started` event; the outcome can land at any time.
 
-**Why we differ:** Point-in-time is simpler and stable (the number for a given period doesn't change). ChartMogul's approach gives a more accurate eventual conversion rate but means historical numbers keep changing.
+**Trade-off:** this gives a more accurate eventual conversion rate, but historical period numbers will move as late-arriving outcomes are recorded.
 
 ### Churn recognition timing
 

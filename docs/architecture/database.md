@@ -230,7 +230,7 @@ Each metric creates its own tables, prefixed with `metric_`. Monetary columns in
 | Churn | `metric_churn_customer_state`, `metric_churn_event` | Customer activity tracking, churn events |
 | Retention | `metric_retention_cohort`, `metric_retention_activity` | Cohort membership, monthly activity |
 | LTV | `metric_ltv_customer_revenue` | Cumulative revenue per customer |
-| Trials | `metric_trial_event` | Trial lifecycle events |
+| Trials | `metric_trial`, `metric_trial_event` | Per-trial outcome (cohort queries); append-only lifecycle log |
 
 ## Event Log
 

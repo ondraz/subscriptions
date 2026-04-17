@@ -35,6 +35,7 @@ _CONSTRAINT_COLS = {
     "uq_churn_state_customer": "(source_id, customer_id)",
     "uq_retention_cohort_customer": "(source_id, customer_id)",
     "uq_retention_activity": "(source_id, customer_id, active_month)",
+    "uq_trial_sub": "(source_id, subscription_id)",
 }
 
 _PG_CONSTRAINT_RE = re.compile(
@@ -58,8 +59,9 @@ async def db():
             return m.group(0)
 
         statement = _PG_CONSTRAINT_RE.sub(_replace, statement)
-        # SQLite uses MAX() where PostgreSQL uses GREATEST()
+        # SQLite uses MAX()/MIN() where PostgreSQL uses GREATEST()/LEAST()
         statement = statement.replace("GREATEST(", "MAX(")
+        statement = statement.replace("LEAST(", "MIN(")
         return statement, parameters
 
     async with engine.begin() as conn:
