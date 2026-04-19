@@ -69,6 +69,10 @@ export type RelativeRange =
   | 'last_1y'
   | 'ytd'
   | 'all_time'
+  | 'last_full_month'
+  | 'last_3_full_months'
+  | 'last_6_full_months'
+  | 'last_12_full_months'
 
 export type Interval = 'day' | 'week' | 'month' | 'year'
 

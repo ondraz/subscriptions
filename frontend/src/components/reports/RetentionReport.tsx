@@ -24,13 +24,12 @@ function monthDiff(from: string, to: string): number {
 }
 
 function monthStarts(start: string, end: string): string[] {
-  // `end` is the first day AFTER the selected period (exclusive), so iterate
-  // with strict `<` to stop before crossing the boundary.
+  // `end` is the inclusive last day of the range.
   const out: string[] = []
   const s = new Date(start)
   const e = new Date(end)
   const cur = new Date(s.getFullYear(), s.getMonth(), 1)
-  while (cur < e) {
+  while (cur <= e) {
     out.push(
       `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-01`,
     )
@@ -39,12 +38,34 @@ function monthStarts(start: string, end: string): string[] {
   return out
 }
 
+function lastDayOfMonth(iso: string): string {
+  const [y, m] = iso.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+}
+
+// NRR / GRR divide by "MRR at period start". A wide selection that reaches
+// before the first customer existed collapses the denominator to zero and
+// the KPI becomes unavailable. Fall back to the most recent full month so
+// the KPIs stay meaningful as the user widens the timeline.
+function rateWindow(start: string, end: string): { rateStart: string; rateEnd: string } {
+  const months = monthStarts(start, end)
+  if (months.length === 0) return { rateStart: start, rateEnd: end }
+  const rateStart = months[months.length - 1]
+  return { rateStart, rateEnd: lastDayOfMonth(rateStart) }
+}
+
 export function RetentionReport() {
   const { start, end } = useTimeRange({ range: 'last_1y' })
+  const { rateStart, rateEnd } = useMemo(() => rateWindow(start, end), [start, end])
 
   const { data: cohortRaw, isLoading: cohortLoading } = useRetention<RawCohortRow[]>({ start, end })
-  const { data: nrr, isLoading: nrrLoading } = useRetention<number | null>({ start, end, query_type: 'nrr' })
-  const { data: grr, isLoading: grrLoading } = useRetention<number | null>({ start, end, query_type: 'grr' })
+  const { data: nrr, isLoading: nrrLoading } = useRetention<number | null>({
+    start: rateStart, end: rateEnd, query_type: 'nrr',
+  })
+  const { data: grr, isLoading: grrLoading } = useRetention<number | null>({
+    start: rateStart, end: rateEnd, query_type: 'grr',
+  })
 
   const cohortEntries: CohortEntry[] = Array.isArray(cohortRaw)
     ? cohortRaw.map((row) => ({
@@ -55,20 +76,21 @@ export function RetentionReport() {
       }))
     : []
 
-  // Monthly NRR/GRR timeline — mirrors reports.retention.nrr_grr().
+  // Monthly NRR/GRR timeline — one closed-closed [first-of-month, last-of-month]
+  // query per month. Mirrors reports.retention.nrr_grr().
   const months = useMemo(() => monthStarts(start, end), [start, end])
   const retQueries = useQueries({
-    queries: months.flatMap((m, i) => {
-      const next = months[i + 1] ?? end
+    queries: months.flatMap((m) => {
+      const monthEnd = lastDayOfMonth(m)
       return [
         {
-          queryKey: ['metrics', 'retention', { start: m, end: next, query_type: 'nrr' }],
-          queryFn: () => fetchRetention<number | null>({ start: m, end: next, query_type: 'nrr' }),
+          queryKey: ['metrics', 'retention', { start: m, end: monthEnd, query_type: 'nrr' }],
+          queryFn: () => fetchRetention<number | null>({ start: m, end: monthEnd, query_type: 'nrr' }),
           staleTime: 60_000,
         },
         {
-          queryKey: ['metrics', 'retention', { start: m, end: next, query_type: 'grr' }],
-          queryFn: () => fetchRetention<number | null>({ start: m, end: next, query_type: 'grr' }),
+          queryKey: ['metrics', 'retention', { start: m, end: monthEnd, query_type: 'grr' }],
+          queryFn: () => fetchRetention<number | null>({ start: m, end: monthEnd, query_type: 'grr' }),
           staleTime: 60_000,
         },
       ]
@@ -76,7 +98,7 @@ export function RetentionReport() {
   })
 
   const timelineLoading = retQueries.some((q) => q.isLoading)
-  const timelineData = months.slice(0, -1).map((m, i) => ({
+  const timelineData = months.map((m, i) => ({
     date: formatMonthYear(m),
     NRR: ((retQueries[i * 2]?.data as number | null | undefined) ?? 0) * 100,
     GRR: ((retQueries[i * 2 + 1]?.data as number | null | undefined) ?? 0) * 100,
@@ -86,15 +108,21 @@ export function RetentionReport() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Retention</h2>
 
+      <div className="text-xs text-muted-foreground">
+        Rates measured over {formatMonthYear(rateStart)} ({rateStart} → {rateEnd}).
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard
           title="Net Revenue Retention"
           value={nrr != null ? formatPercent(nrr) : '—'}
+          subtitle={nrr == null ? 'no MRR at period start' : undefined}
           loading={nrrLoading}
         />
         <KPICard
           title="Gross Revenue Retention"
           value={grr != null ? formatPercent(grr) : '—'}
+          subtitle={grr == null ? 'no MRR at period start' : undefined}
           loading={grrLoading}
         />
       </div>

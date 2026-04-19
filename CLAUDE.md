@@ -219,7 +219,9 @@ Copy `.env.example` to `.env` and configure:
 ## Key Design Conventions
 
 - **Money:** stored as cents (bigint), never float. Dual-column: `*_cents` (original currency) + `*_base_cents` (base currency at daily FX rate, configured via `BASE_CURRENCY`, default USD). Convert to Decimal at query boundary.
-- **Dates:** TIMESTAMPTZ in PostgreSQL, `YYYY-MM-DD` in API, `datetime` in Python.
+- **Time zone:** everything is UTC. PostgreSQL columns are `TIMESTAMPTZ`, Python `datetime` values are always timezone-aware (`datetime.now(UTC)`, `datetime.fromtimestamp(..., tz=UTC)` — never `datetime.now()` / `datetime.utcnow()` / `date.today()`). Bare `YYYY-MM-DD` strings at the API boundary are resolved as UTC. See `docs/definitions.md#time-zone-convention`.
+- **Dates:** TIMESTAMPTZ in PostgreSQL, `YYYY-MM-DD` in API, timezone-aware `datetime` (UTC) in Python.
+- **Date ranges:** closed-closed `[start, end]` — both endpoints inclusive. A range `2025-07-01` to `2025-09-30` covers every timestamp from `2025-07-01T00:00:00.000000` through `2025-09-30T23:59:59.999999`. The cube filter layer coerces bare `date` values to day bounds so SQL `BETWEEN` is truly inclusive of the last calendar day. The same applies to the `at=<date>` snapshot parameter (treated as end-of-day). Full specification in `docs/definitions.md#date-range-convention`.
 - **Async:** all database access via SQLAlchemy `AsyncSession`/`AsyncEngine`. All metric queries, connector methods, and API endpoints are `async`.
 - **Metric transparency:** every metric must document its formula, SQL, assumptions, edge cases.
 - **Query Algebra:** all segmented metric SQL is built through `Cube` definitions and composable `QueryFragment` objects (SQLAlchemy `Select`-based, no string concatenation). See `docs/architecture/cubes.md`.

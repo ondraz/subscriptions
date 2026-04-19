@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter
@@ -31,7 +31,7 @@ async def get_summary() -> dict[str, Any]:
         engine = MetricsEngine(db=session)
         result: dict[str, Any] = {}
 
-        today = date.today()
+        today = datetime.now(UTC).date()
         period_start = today.replace(day=1) - timedelta(days=1)
         period_start = period_start.replace(day=1)  # first of previous month
 

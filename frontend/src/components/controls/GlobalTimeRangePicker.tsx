@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Calendar, X } from 'lucide-react'
 import { useTimeRange } from '@/hooks/useTimeRange'
-import type { Interval } from '@/lib/types'
+import type { Interval, RelativeRange } from '@/lib/types'
 
 // ── helpers ─────────────────────────────────────────────────────────
 
@@ -46,20 +46,19 @@ function yearsBetween(firstYear: number, lastYear: number): number[] {
 
 type Grain = 'week' | 'month' | 'quarter' | 'year'
 
-// Cells carry an *exclusive* end — the first day after the period. Storing
-// ranges this way lets the backend's BETWEEN filter capture the entire last
-// period (e.g. a Feb range stores end=Mar 1 so timestamps on Feb 28
-// afternoon are still included).
+// Cells carry the *inclusive* last day of the period — matching Tidemill's
+// closed-closed `[start, end]` convention (see docs/definitions.md). The
+// backend treats `end` as the last millisecond of that calendar day.
 interface Cell {
   label: string
   start: Date
-  end: Date // exclusive
+  end: Date // inclusive last day
 }
 
 function monthCells(year: number): Cell[] {
   return Array.from({ length: 12 }, (_, m) => {
     const start = new Date(year, m, 1)
-    const end = new Date(year, m + 1, 1)
+    const end = new Date(year, m + 1, 0) // last day of month m
     return { label: monthLabel(start), start, end }
   })
 }
@@ -67,7 +66,7 @@ function monthCells(year: number): Cell[] {
 function quarterCells(year: number): Cell[] {
   return Array.from({ length: 4 }, (_, q) => {
     const start = new Date(year, q * 3, 1)
-    const end = new Date(year, q * 3 + 3, 1)
+    const end = new Date(year, q * 3 + 3, 0) // last day of quarter
     return { label: `Q${q + 1}`, start, end }
   })
 }
@@ -76,7 +75,7 @@ function yearCells(years: number[]): Cell[] {
   return years.map((y) => ({
     label: String(y),
     start: new Date(y, 0, 1),
-    end: new Date(y + 1, 0, 1),
+    end: new Date(y, 11, 31),
   }))
 }
 
@@ -88,8 +87,8 @@ function weekCells(year: number): Cell[] {
   first.setDate(first.getDate() - (day - 1))
   while (first.getFullYear() <= year) {
     const start = new Date(first)
-    const end = addDays(start, 7)
-    if (start.getFullYear() === year || end.getFullYear() > year) {
+    const end = addDays(start, 6) // inclusive Sunday
+    if (start.getFullYear() === year || end.getFullYear() === year) {
       out.push({
         label: `${pad(start.getDate())}/${pad(start.getMonth() + 1)}`,
         start,
@@ -108,21 +107,18 @@ function grainToInterval(g: Grain): Interval {
 
 // ── presets ─────────────────────────────────────────────────────────
 
+// A preset may resolve to either explicit dates (fixed when selected) or a
+// RelativeRange key (re-resolved on every read so the selection auto-shifts
+// across day/month boundaries).
 interface Preset {
   label: string
-  resolve: () => { start: string; end: string; interval?: Interval }
+  resolve: () =>
+    | { start: string; end: string; interval?: Interval }
+    | { range: RelativeRange; interval?: Interval }
 }
 
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1)
-}
-
-function startOfNextMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 1)
-}
-
-function addMonths(d: Date, n: number): Date {
-  return new Date(d.getFullYear(), d.getMonth() + n, d.getDate())
 }
 
 const PRESETS: Preset[] = [
@@ -130,44 +126,28 @@ const PRESETS: Preset[] = [
     label: 'This month',
     resolve: () => {
       const now = new Date()
-      return {
-        start: fmt(startOfMonth(now)),
-        end: fmt(startOfNextMonth(now)),
-        interval: 'month',
-      }
+      return { start: fmt(startOfMonth(now)), end: fmt(now), interval: 'month' }
     },
   },
+  // The "full months" presets persist as RelativeRange keys so they auto-shift
+  // forward when the calendar crosses a month boundary (e.g. on May 1 the
+  // "Last 12 full months" selection silently updates from Apr→Mar 2025 to
+  // May→Apr 2026 without user action).
   {
-    label: 'Last month',
-    resolve: () => {
-      const now = new Date()
-      const s = startOfMonth(addMonths(now, -1))
-      return { start: fmt(s), end: fmt(startOfNextMonth(s)), interval: 'month' }
-    },
+    label: 'Last full month',
+    resolve: () => ({ range: 'last_full_month', interval: 'month' }),
   },
   {
-    label: 'Last 3 months',
-    resolve: () => {
-      const now = new Date()
-      const s = startOfMonth(addMonths(now, -2))
-      return { start: fmt(s), end: fmt(startOfNextMonth(now)), interval: 'month' }
-    },
+    label: 'Last 3 full months',
+    resolve: () => ({ range: 'last_3_full_months', interval: 'month' }),
   },
   {
-    label: 'Last 6 months',
-    resolve: () => {
-      const now = new Date()
-      const s = startOfMonth(addMonths(now, -5))
-      return { start: fmt(s), end: fmt(startOfNextMonth(now)), interval: 'month' }
-    },
+    label: 'Last 6 full months',
+    resolve: () => ({ range: 'last_6_full_months', interval: 'month' }),
   },
   {
-    label: 'Last 12 months',
-    resolve: () => {
-      const now = new Date()
-      const s = startOfMonth(addMonths(now, -11))
-      return { start: fmt(s), end: fmt(startOfNextMonth(now)), interval: 'month' }
-    },
+    label: 'Last 12 full months',
+    resolve: () => ({ range: 'last_12_full_months', interval: 'month' }),
   },
   {
     label: 'Quarter to date',
@@ -175,7 +155,7 @@ const PRESETS: Preset[] = [
       const now = new Date()
       const q = quarterIndex(now)
       const s = new Date(now.getFullYear(), q * 3, 1)
-      return { start: fmt(s), end: fmt(addDays(now, 1)), interval: 'month' }
+      return { start: fmt(s), end: fmt(now), interval: 'month' }
     },
   },
   {
@@ -183,18 +163,14 @@ const PRESETS: Preset[] = [
     resolve: () => {
       const now = new Date()
       const s = new Date(now.getFullYear(), 0, 1)
-      return { start: fmt(s), end: fmt(addDays(now, 1)), interval: 'month' }
+      return { start: fmt(s), end: fmt(now), interval: 'month' }
     },
   },
   {
     label: 'All time',
     resolve: () => {
       const now = new Date()
-      return {
-        start: '2020-01-01',
-        end: fmt(addDays(now, 1)),
-        interval: 'month',
-      }
+      return { start: '2020-01-01', end: fmt(now), interval: 'month' }
     },
   },
 ]
@@ -263,15 +239,13 @@ export function GlobalTimeRangePicker() {
 
   const selectedStart = useMemo(() => parseIso(start), [start])
   const selectedEnd = useMemo(() => parseIso(end), [end])
-  // Inclusive end (last day of selected period) for user-friendly display.
-  const displayEnd = useMemo(() => addDays(selectedEnd, -1), [selectedEnd])
 
   const gridYears = useMemo(() => {
     const now = new Date()
     const first = Math.min(selectedStart.getFullYear(), now.getFullYear() - 2)
-    const last = Math.max(displayEnd.getFullYear(), now.getFullYear())
+    const last = Math.max(selectedEnd.getFullYear(), now.getFullYear())
     return yearsBetween(first, last)
-  }, [selectedStart, displayEnd])
+  }, [selectedStart, selectedEnd])
 
   function isCellInSelection(cell: Cell): 'start' | 'end' | 'inside' | null {
     if (pending) {
@@ -279,12 +253,12 @@ export function GlobalTimeRangePicker() {
       const second = hovered ?? pending
       const loStart = first.start < second.start ? first.start : second.start
       const hiEnd = first.end > second.end ? first.end : second.end
-      if (cell.end <= loStart || cell.start >= hiEnd) return null
+      if (cell.end < loStart || cell.start > hiEnd) return null
       if (cell.start.getTime() === loStart.getTime()) return 'start'
       if (cell.end.getTime() === hiEnd.getTime()) return 'end'
       return 'inside'
     }
-    if (cell.end <= selectedStart || cell.start >= selectedEnd) return null
+    if (cell.end < selectedStart || cell.start > selectedEnd) return null
     if (cell.start.getTime() === selectedStart.getTime()) return 'start'
     if (cell.end.getTime() === selectedEnd.getTime()) return 'end'
     return 'inside'
@@ -321,7 +295,7 @@ export function GlobalTimeRangePicker() {
 
   const triggerLabel = useMemo(() => {
     const s = selectedStart
-    const e = displayEnd
+    const e = selectedEnd
     const sameMonth =
       s.getFullYear() === e.getFullYear() &&
       s.getMonth() === e.getMonth() &&
@@ -340,7 +314,7 @@ export function GlobalTimeRangePicker() {
       year: 'numeric',
     })
     return `${sLabel} – ${eLabel}`
-  }, [selectedStart, displayEnd])
+  }, [selectedStart, selectedEnd])
 
   const intervalLabel =
     interval === 'day'
@@ -520,13 +494,9 @@ export function GlobalTimeRangePicker() {
               To
               <input
                 type="date"
-                value={fmt(displayEnd)}
+                value={end}
                 onChange={(e) => {
-                  if (e.target.value) {
-                    // User types the inclusive last day; store first day after.
-                    const exclusive = addDays(parseIso(e.target.value), 1)
-                    setRange({ start, end: fmt(exclusive) })
-                  }
+                  if (e.target.value) setRange({ start, end: e.target.value })
                 }}
                 className="bg-background border border-border rounded px-2 py-1"
               />

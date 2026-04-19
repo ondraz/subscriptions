@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass
+from datetime import date, datetime, time
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +25,31 @@ if TYPE_CHECKING:
     from sqlalchemy.sql.elements import ColumnClause, ColumnElement, Label
 
 logger = logging.getLogger(__name__)
+
+
+def _day_start(v: Any) -> Any:
+    """Coerce a naked ``date`` to its 00:00:00 ``datetime``.
+
+    Tidemill's public convention is that date ranges are closed-closed:
+    ``[start, end]`` includes every timestamp from ``start T00:00:00.000``
+    through ``end T23:59:59.999999``. When callers pass a ``date`` for a
+    timestamp column, we pin it to the start of that day.
+    """
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return datetime.combine(v, time.min)
+    return v
+
+
+def _day_end(v: Any) -> Any:
+    """Coerce a naked ``date`` to its 23:59:59.999999 ``datetime``.
+
+    Mirrors :func:`_day_start` for the closing boundary so BETWEEN is
+    truly inclusive of the last calendar day.
+    """
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return datetime.combine(v, time.max)
+    return v
+
 
 # ── ANSI helpers for SQL log coloring ──────────────────────────────────────
 
@@ -374,19 +400,25 @@ def _filter_clause(f: FilterExpr) -> tuple[ColumnElement[Any], dict[str, Any]]:
             clause = col >= bindparam(f.param_name)
             params[f.param_name] = f.value
         case "<":
+            # Half-open upper bound — keep the raw value (a ``date`` at 00:00
+            # semantically means "before this day", which is what callers want).
             clause = col < bindparam(f.param_name)
             params[f.param_name] = f.value
         case "<=":
+            # Inclusive upper bound — pin a ``date`` to end-of-day.
             clause = col <= bindparam(f.param_name)
-            params[f.param_name] = f.value
+            params[f.param_name] = _day_end(f.value)
         case "in":
             clause = col.in_(bindparam(f.param_name, expanding=True))
             params[f.param_name] = list(f.value)
         case "between":
+            # Closed-closed: ``[start, end]`` inclusive on both ends.
+            # Dates are coerced to day bounds so the last calendar day is
+            # fully covered.
             sp, ep = f"{f.param_name}_start", f"{f.param_name}_end"
             clause = col.between(bindparam(sp), bindparam(ep))
-            params[sp] = f.value[0]
-            params[ep] = f.value[1]
+            params[sp] = _day_start(f.value[0])
+            params[ep] = _day_end(f.value[1])
         case other:
             raise ValueError(f"Unknown filter operator: {other}")
 

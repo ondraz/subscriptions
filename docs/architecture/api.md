@@ -89,9 +89,9 @@ engine = MetricsEngine(db=async_session)
 
 # Dynamic query dispatch — all metric queries are async
 mrr = await engine.query("mrr", {"query_type": "current"})
-churn = await engine.query("churn", {"start": date(2026, 1, 1), "end": date(2026, 3, 1), "type": "logo"})
+churn = await engine.query("churn", {"start": date(2026, 1, 1), "end": date(2026, 2, 28), "type": "logo"})
 cohorts = await engine.query("retention", {"query_type": "cohort_matrix",
-                                            "start": date(2025, 1, 1), "end": date(2026, 1, 1)})
+                                            "start": date(2025, 1, 1), "end": date(2025, 12, 31)})
 
 # With dimensions and filters via QuerySpec
 spec = QuerySpec(

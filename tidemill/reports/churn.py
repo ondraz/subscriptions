@@ -132,16 +132,18 @@ def timeline(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
         DataFrame with ``month``, ``logo_churn``, ``revenue_churn``
         (as decimals, e.g. 0.05 = 5%).
     """
+    # Query each month closed-closed ``[first-of-month, last-of-month]`` per
+    # Tidemill's date-range convention (see docs/definitions.md).
     months = pd.date_range(start, end, freq="MS")
     rows: list[dict[str, Any]] = []
-    for i in range(len(months) - 1):
-        s = months[i].strftime("%Y-%m-%d")
-        e = months[i + 1].strftime("%Y-%m-%d")
+    for m in months:
+        s = m.strftime("%Y-%m-%d")
+        e = (m + pd.offsets.MonthEnd(0)).strftime("%Y-%m-%d")
         logo = tm.churn(s, e, type="logo")
         revenue = tm.churn(s, e, type="revenue")
         rows.append(
             {
-                "month": months[i].strftime("%Y-%m"),
+                "month": m.strftime("%Y-%m"),
                 "logo_churn": float(logo) if logo is not None else None,
                 "revenue_churn": float(revenue) if revenue is not None else None,
             }

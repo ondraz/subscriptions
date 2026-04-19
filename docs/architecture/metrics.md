@@ -791,8 +791,8 @@ engine = MetricsEngine(db=async_session)
 
 # Any registered metric, any params — always awaited
 await engine.query("mrr", {"query_type": "current"})
-await engine.query("mrr", {"query_type": "series", "start": date(2025,1,1), "end": date(2026,1,1), "interval": "month"})
-await engine.query("churn", {"start": date(2026,1,1), "end": date(2026,3,1), "type": "revenue"})
+await engine.query("mrr", {"query_type": "series", "start": date(2025,1,1), "end": date(2025,12,31), "interval": "month"})
+await engine.query("churn", {"start": date(2026,1,1), "end": date(2026,2,28), "type": "revenue"})
 
 # With dimensions and filters via QuerySpec
 spec = QuerySpec(

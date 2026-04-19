@@ -160,11 +160,13 @@ class RetentionMetric(Metric):
         if not cohort_by_customer:
             return []
 
-        # 2. Monthly MRR movements per customer, through period end
+        # 2. Monthly MRR movements per customer, through period end.
+        # ``end`` is the last inclusive day — the filter layer coerces it to
+        # end-of-day so events late on ``end`` are captured.
         mq = (
             mm.dimension("customer_id")
             + mm.measures.amount
-            + mm.filter("occurred_at", "<", end)
+            + mm.filter("occurred_at", "<=", end)
             + mm.time_grain("occurred_at", "month")
         )
         mstmt, mparams = mq.compile(mm)
@@ -238,7 +240,8 @@ class RetentionMetric(Metric):
         if start_mrr <= 0:
             return None
 
-        # Movements in [start, end)
+        # Movements in [start, end] (closed-closed; filter layer extends
+        # `end` to end-of-day).
         mq = (
             mm.measures.amount
             + mm.dimension("movement_type")

@@ -53,10 +53,12 @@ def arpu_timeline(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
         DataFrame with ``month``, ``active_customers``, ``mrr_dollars``,
         and ``arpu_dollars``.
     """
+    # Snapshot at the last day of each month (closed-closed convention —
+    # ``at`` is treated as an inclusive end-of-day boundary by the API).
     months = pd.date_range(start, end, freq="MS")
     rows: list[dict[str, Any]] = []
     for m in months:
-        at = (m + pd.DateOffset(months=1)).strftime("%Y-%m-%d")
+        at = (m + pd.offsets.MonthEnd(0)).strftime("%Y-%m-%d")
         arpu_cents = tm.arpu(at=at)
         mrr_cents = tm.mrr(at=at)
         customers = int(round(mrr_cents / arpu_cents)) if arpu_cents and mrr_cents else None

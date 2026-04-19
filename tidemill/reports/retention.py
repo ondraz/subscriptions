@@ -73,16 +73,18 @@ def nrr_grr(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
     Returns:
         DataFrame with ``month``, ``nrr``, ``grr`` (as decimals).
     """
+    # Query each month closed-closed ``[first-of-month, last-of-month]`` per
+    # Tidemill's date-range convention (see docs/definitions.md).
     months = pd.date_range(start, end, freq="MS")
     rows: list[dict[str, Any]] = []
-    for i in range(len(months) - 1):
-        s = months[i].strftime("%Y-%m-%d")
-        e = months[i + 1].strftime("%Y-%m-%d")
+    for m in months:
+        s = m.strftime("%Y-%m-%d")
+        e = (m + pd.offsets.MonthEnd(0)).strftime("%Y-%m-%d")
         nrr_val = tm.retention(s, e, query_type="nrr")
         grr_val = tm.retention(s, e, query_type="grr")
         rows.append(
             {
-                "month": months[i].strftime("%Y-%m"),
+                "month": m.strftime("%Y-%m"),
                 "nrr": nrr_val,
                 "grr": grr_val,
             }

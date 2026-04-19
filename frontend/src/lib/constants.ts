@@ -1,5 +1,5 @@
 import type { RelativeRange } from './types'
-import { subDays, subYears, startOfYear, addDays, format } from 'date-fns'
+import { subDays, subYears, startOfYear, startOfMonth, subMonths, format } from 'date-fns'
 
 export const RELATIVE_RANGES: { label: string; value: RelativeRange }[] = [
   { label: 'Last 7 days', value: 'last_7d' },
@@ -10,11 +10,15 @@ export const RELATIVE_RANGES: { label: string; value: RelativeRange }[] = [
   { label: 'All time', value: 'all_time' },
 ]
 
+// Date ranges are closed-closed `[start, end]` — both endpoints are
+// inclusive. The backend treats `end` as the last millisecond of that
+// calendar day, so passing today's date includes today's events.
 export function resolveRelativeRange(range: RelativeRange): { start: string; end: string } {
-  // `end` is *exclusive* (first day after the included period) so the
-  // backend's BETWEEN filter covers today's events through end-of-day.
   const now = new Date()
-  const end = format(addDays(now, 1), 'yyyy-MM-dd')
+  const end = format(now, 'yyyy-MM-dd')
+  // Full-months ranges end on the last day of the previous complete month
+  // so the selection auto-shifts when the calendar crosses a month boundary.
+  const lastFullMonthEnd = format(subDays(startOfMonth(now), 1), 'yyyy-MM-dd')
   switch (range) {
     case 'last_7d':
       return { start: format(subDays(now, 7), 'yyyy-MM-dd'), end }
@@ -28,6 +32,26 @@ export function resolveRelativeRange(range: RelativeRange): { start: string; end
       return { start: format(startOfYear(now), 'yyyy-MM-dd'), end }
     case 'all_time':
       return { start: '2020-01-01', end }
+    case 'last_full_month':
+      return {
+        start: format(startOfMonth(subMonths(now, 1)), 'yyyy-MM-dd'),
+        end: lastFullMonthEnd,
+      }
+    case 'last_3_full_months':
+      return {
+        start: format(startOfMonth(subMonths(now, 3)), 'yyyy-MM-dd'),
+        end: lastFullMonthEnd,
+      }
+    case 'last_6_full_months':
+      return {
+        start: format(startOfMonth(subMonths(now, 6)), 'yyyy-MM-dd'),
+        end: lastFullMonthEnd,
+      }
+    case 'last_12_full_months':
+      return {
+        start: format(startOfMonth(subMonths(now, 12)), 'yyyy-MM-dd'),
+        end: lastFullMonthEnd,
+      }
   }
 }
 

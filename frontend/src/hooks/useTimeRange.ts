@@ -16,9 +16,10 @@ interface StoredTimeRange {
   interval?: Interval
 }
 
-// v2 switched `end` to exclusive semantics (first day AFTER the included
-// period) so the backend's BETWEEN filter captures the full last day.
-const STORAGE_KEY = 'tidemill:timerange:v2'
+// v3 standardises on closed-closed `[start, end]` date ranges — both
+// endpoints are inclusive. The backend treats `end` as the last millisecond
+// of that calendar day.
+const STORAGE_KEY = 'tidemill:timerange:v3'
 
 function loadPersisted(): StoredTimeRange {
   if (typeof window === 'undefined') return {}

@@ -271,12 +271,15 @@ class MrrMetric(Metric):
         use_original = spec and "currency" in (spec.dimensions or [])
 
         if at is not None:
-            # Historical MRR: cumulative sum of movements before the date.
-            # The snapshot table only stores the latest state per subscription,
-            # so filtering by snapshot_at misses subscriptions modified later.
+            # Historical MRR: cumulative sum of movements through end-of-day
+            # ``at``. The snapshot table only stores the latest state per
+            # subscription, so filtering by snapshot_at would miss subscriptions
+            # modified later. The filter layer coerces a bare ``date`` upper
+            # bound to the last microsecond of the day (closed-closed
+            # convention — see ``docs/definitions.md``).
             mm = self.movement_model
             measure = mm.measures.amount_original if use_original else mm.measures.amount
-            dq = measure + mm.filter("occurred_at", "<", at)
+            dq = measure + mm.filter("occurred_at", "<=", at)
             if spec:
                 dq = dq + mm.apply_spec(spec)
             stmt, params = dq.compile(mm)
@@ -330,6 +333,10 @@ class MrrMetric(Metric):
     ) -> list[dict[str, Any]]:
         import pandas as pd
 
+        # Date ranges are closed-closed ``[start, end]``. pandas' default
+        # (``inclusive="both"``) matches: month-starts are generated from
+        # ``start`` through ``end`` inclusive, so a range whose ``end`` is
+        # the last day of the final month naturally includes that month.
         months = pd.date_range(start, end, freq="MS")
         if len(months) < 2:
             return []

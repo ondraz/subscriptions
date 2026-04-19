@@ -808,6 +808,16 @@ GROUP BY m.movement_type, sub.plan_id
 
 `between` binds two parameters using the dimension name as the prefix (here `occurred_at_start` / `occurred_at_end`). Equality and `in` filters use `:<dimension_name>`; other raw `where(...)` calls derive a parameter name from the column and operator (e.g. `s_mrr_base_cents_gt`).
 
+### Date-range semantics
+
+All date ranges are **closed-closed** `[start, end]` — both endpoints are inclusive (see `docs/definitions.md#date-range-convention`). When a bare `date` is passed as a filter value, the filter layer coerces it to the appropriate day boundary so SQL `BETWEEN` captures the full calendar day against a `TIMESTAMPTZ` column:
+
+- `between (start, end)` → `start` is pinned to `00:00:00.000000`, `end` to `23:59:59.999999`
+- `<=` upper bound → coerced to end-of-day (inclusive)
+- `<`, `>`, `>=` — no coercion; the bare date sits at `00:00:00` and behaves as the half-open boundary you'd expect
+
+So `between (date(2025, 7, 1), date(2025, 9, 30))` covers every event from Jul 1 midnight through the last microsecond of Sep 30.
+
 ## Implementation Notes
 
 ### File Location

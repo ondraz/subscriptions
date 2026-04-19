@@ -12,13 +12,12 @@ import { COLORS } from '@/lib/colors'
 import type { CohortLTVEntry } from '@/lib/types'
 
 function monthStarts(start: string, end: string): string[] {
-  // `end` is the first day AFTER the selected period (exclusive), so iterate
-  // with strict `<` to stop before crossing the boundary.
+  // `end` is the inclusive last day of the range.
   const out: string[] = []
   const s = new Date(start)
   const e = new Date(end)
   const cur = new Date(s.getFullYear(), s.getMonth(), 1)
-  while (cur < e) {
+  while (cur <= e) {
     out.push(
       `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-01`,
     )
@@ -27,10 +26,10 @@ function monthStarts(start: string, end: string): string[] {
   return out
 }
 
-function nextMonth(iso: string): string {
-  const d = new Date(iso)
-  d.setMonth(d.getMonth() + 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+function lastDayOfMonth(iso: string): string {
+  const [y, m] = iso.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 }
 
 export function LTVReport() {
@@ -47,12 +46,12 @@ export function LTVReport() {
     return arpu / ltv
   }, [arpu, ltv])
 
-  // ARPU timeline: one ARPU + MRR call per month.
-  // Mirrors reports.ltv.arpu_timeline().
+  // ARPU timeline: one ARPU + MRR call per month, measured at the last day
+  // of that month (closed-closed snapshot). Mirrors reports.ltv.arpu_timeline().
   const months = useMemo(() => monthStarts(start, end), [start, end])
   const arpuQueries = useQueries({
     queries: months.flatMap((m) => {
-      const at = nextMonth(m)
+      const at = lastDayOfMonth(m)
       return [
         {
           queryKey: ['metrics', 'arpu', { at }],

@@ -119,8 +119,11 @@ class LtvMetric(Metric):
     ) -> float | None:
         from tidemill.metrics.mrr.cubes import MRRMovementCube
 
+        # ``at`` is an inclusive end-of-day snapshot boundary (closed-closed
+        # convention — see ``docs/definitions.md``). The filter layer coerces
+        # the bare ``date`` to 23:59:59.999999 for the comparison.
         mm = MRRMovementCube
-        q = mm.measures.amount + mm.dimension("customer_id") + mm.filter("occurred_at", "<", at)
+        q = mm.measures.amount + mm.dimension("customer_id") + mm.filter("occurred_at", "<=", at)
         if spec:
             q = q + mm.apply_spec(spec)
 
@@ -190,14 +193,22 @@ class LtvMetric(Metric):
     ) -> list[dict[str, Any]]:
         """Average revenue per customer by cohort month.
 
+        The ``[start, end]`` window selects which cohorts to display (i.e. the
+        rows returned). Revenue is the **cumulative lifetime revenue** from
+        each cohort's customers — the sum of every invoice they have ever
+        paid, not just invoices paid inside the display window. Bounding
+        revenue by the display window would zero-out cohorts whose customers
+        pay on a cadence that falls outside the selected range (e.g. annual
+        invoices viewed through a quarterly window).
+
         Cohort = month of a customer's first ``new`` MRR movement — matching
-        the retention cohort definition.  Trials that never convert to paid
+        the retention cohort definition. Trials that never convert to paid
         MRR are excluded, so the cohort denominator is consistent with ARPU
         (both count customers with at least one active subscription,
-        ``MRR > 0``).  Revenue is the sum of invoices paid in ``[start, end]``.
+        ``MRR > 0``).
         """
         from tidemill.metrics.mrr.cubes import MRRMovementCube
-        from tidemill.metrics.retention.metric import _to_month
+        from tidemill.metrics.retention.metric import _month_range, _to_month
 
         mm = MRRMovementCube
 
@@ -224,15 +235,11 @@ class LtvMetric(Metric):
         cohort_by_customer = {
             cid: m for cid, m in cohort_by_customer.items() if start_m <= m <= end_m
         }
-        if not cohort_by_customer:
-            return []
 
+        # Cumulative lifetime revenue per customer (no paid_at filter — see
+        # docstring). The display window only selects which cohorts render.
         m = self.model
-        iq = (
-            m.measures.total_revenue
-            + m.dimension("customer_id")
-            + m.filter("paid_at", "between", (start, end))
-        )
+        iq = m.measures.total_revenue + m.dimension("customer_id")
         if spec:
             iq = iq + m.apply_spec(spec)
         istmt, iparams = iq.compile(m)
@@ -248,14 +255,19 @@ class LtvMetric(Metric):
             bucket["count"] += 1
             bucket["revenue"] += revenue_by_customer.get(cid, 0)
 
+        # Emit one row per month in the display window — months without any
+        # new-cohort customers render as zeros so the series is continuous
+        # (no gaps in bar charts or heatmaps).
         return [
             {
                 "cohort_month": cohort_m,
-                "customer_count": data["count"],
-                "total_revenue": data["revenue"],
+                "customer_count": per_cohort.get(cohort_m, {"count": 0})["count"],
+                "total_revenue": per_cohort.get(cohort_m, {"revenue": 0})["revenue"],
                 "avg_revenue_per_customer": (
-                    data["revenue"] / data["count"] if data["count"] else 0
+                    per_cohort[cohort_m]["revenue"] / per_cohort[cohort_m]["count"]
+                    if cohort_m in per_cohort and per_cohort[cohort_m]["count"] > 0
+                    else 0
                 ),
             }
-            for cohort_m, data in sorted(per_cohort.items())
+            for cohort_m in _month_range(start_m, end_m)
         ]

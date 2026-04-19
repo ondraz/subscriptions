@@ -20,13 +20,13 @@ import type {
 } from '@/lib/types'
 
 function monthStarts(start: string, end: string): string[] {
-  // `end` is the first day AFTER the selected period (exclusive), so iterate
-  // with strict `<` to stop before crossing the boundary.
+  // `end` is the inclusive last day of the range — iterate with `<=` so the
+  // final month's start is included when the range covers it.
   const out: string[] = []
   const s = new Date(start)
   const e = new Date(end)
   const cur = new Date(s.getFullYear(), s.getMonth(), 1)
-  while (cur < e) {
+  while (cur <= e) {
     out.push(
       `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-01`,
     )
@@ -35,33 +35,25 @@ function monthStarts(start: string, end: string): string[] {
   return out
 }
 
-// Churn rates are meaningful per-month: they need customers active at
-// period start, so a wide window collapses the denominator. Pick the last
-// complete month inside [start, end] as the rate window (and fall back to
-// the first month if only one fits).
-function rateWindow(start: string, end: string): { rateStart: string; rateEnd: string } {
-  const months = monthStarts(start, end)
-  if (months.length >= 2) {
-    return { rateStart: months[months.length - 2], rateEnd: months[months.length - 1] }
-  }
-  if (months.length === 1) {
-    return { rateStart: months[0], rateEnd: end }
-  }
-  return { rateStart: start, rateEnd: end }
+function lastDayOfMonth(iso: string): string {
+  const [y, m] = iso.split('-').map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 }
 
-function previousDay(iso: string): string {
-  const d = new Date(iso)
-  d.setDate(d.getDate() - 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+// Churn rates are meaningful per-month: they need customers active at
+// period start, so a wide window collapses the denominator. Pick the last
+// month inside [start, end] as the rate window and report it closed-closed.
+function rateWindow(start: string, end: string): { rateStart: string; rateEnd: string } {
+  const months = monthStarts(start, end)
+  if (months.length === 0) return { rateStart: start, rateEnd: end }
+  const rateStart = months[months.length - 1]
+  return { rateStart, rateEnd: lastDayOfMonth(rateStart) }
 }
 
 export function ChurnReport() {
   const { start, end } = useTimeRange({ range: 'last_1y' })
   const { rateStart, rateEnd } = useMemo(() => rateWindow(start, end), [start, end])
-  // API uses first-of-next-month as exclusive upper bound; display shows the
-  // last day of the measured month so "Mar 2026" reads as 2026-03-31.
-  const rateEndDisplay = previousDay(rateEnd)
 
   const { data: logoRate, isLoading: logoRateLoading } = useChurn<number | null>({
     start: rateStart, end: rateEnd, type: 'logo',
@@ -78,20 +70,20 @@ export function ChurnReport() {
     useMRRWaterfall<WaterfallEntry[]>({ start, end })
 
   // Monthly churn timeline — one API call per month for both logo + revenue.
-  // Mirrors reports.churn.timeline() in the Python reports module.
+  // Each month is queried closed-closed [first-of-month, last-of-month].
   const months = useMemo(() => monthStarts(start, end), [start, end])
   const timelineQueries = useQueries({
-    queries: months.flatMap((m, i) => {
-      const next = months[i + 1] ?? end
+    queries: months.flatMap((m) => {
+      const monthEnd = lastDayOfMonth(m)
       return [
         {
-          queryKey: ['metrics', 'churn', { start: m, end: next, type: 'logo' }],
-          queryFn: () => fetchChurn<number | null>({ start: m, end: next, type: 'logo' }),
+          queryKey: ['metrics', 'churn', { start: m, end: monthEnd, type: 'logo' }],
+          queryFn: () => fetchChurn<number | null>({ start: m, end: monthEnd, type: 'logo' }),
           staleTime: 60_000,
         },
         {
-          queryKey: ['metrics', 'churn', { start: m, end: next, type: 'revenue' }],
-          queryFn: () => fetchChurn<number | null>({ start: m, end: next, type: 'revenue' }),
+          queryKey: ['metrics', 'churn', { start: m, end: monthEnd, type: 'revenue' }],
+          queryFn: () => fetchChurn<number | null>({ start: m, end: monthEnd, type: 'revenue' }),
           staleTime: 60_000,
         },
       ]
@@ -99,7 +91,7 @@ export function ChurnReport() {
   })
 
   const timelineLoading = timelineQueries.some((q) => q.isLoading)
-  const timelineData = months.slice(0, -1).map((m, i) => ({
+  const timelineData = months.map((m, i) => ({
     date: formatMonthYear(m),
     logo: (timelineQueries[i * 2]?.data as number | null | undefined) ?? null,
     revenue: (timelineQueries[i * 2 + 1]?.data as number | null | undefined) ?? null,
@@ -130,7 +122,7 @@ export function ChurnReport() {
       <h2 className="text-lg font-semibold">Churn</h2>
 
       <div className="text-xs text-muted-foreground">
-        Rates measured over {formatMonthYear(rateStart)} ({rateStart} → {rateEndDisplay}).
+        Rates measured over {formatMonthYear(rateStart)} ({rateStart} → {rateEnd}).
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

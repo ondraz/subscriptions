@@ -172,9 +172,10 @@ class TrialsMetric(Metric):
     ) -> float | None:
         """Cohort trial conversion rate.
 
-        Denominator is trials **started** in [start, end).  Numerator is
+        Denominator is trials **started** in ``[start, end]`` (closed-closed —
+        both endpoints inclusive, see ``docs/definitions.md``). Numerator is
         how many of those later converted (at any time — may be after
-        ``end``).  Returns None when no trials started in the range.
+        ``end``). Returns None when no trials started in the range.
         """
         data = await self._funnel(start, end, spec)
         return data["conversion_rate"]

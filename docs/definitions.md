@@ -3,6 +3,41 @@
 > Formal definitions for every metric computed by Tidemill.
 > All monetary values are stored as integer cents and converted to decimal at query boundaries.
 
+## Time Zone Convention
+
+**Every timestamp in Tidemill is UTC.**
+
+All wall-clock values — stored columns, API payloads, Kafka events, CLI output,
+notebook arguments — are interpreted as UTC. PostgreSQL columns are
+`TIMESTAMPTZ` and Python `datetime` values are constructed with
+`datetime.now(UTC)` / `datetime.fromtimestamp(..., tz=UTC)`. Bare
+`YYYY-MM-DD` dates passed across the API boundary are resolved against UTC
+(so `2025-09-30` expands to `2025-09-30T00:00:00Z` … `2025-09-30T23:59:59.999999Z`).
+
+The frontend date picker intentionally treats `YYYY-MM-DD` strings as local
+calendar days for display purposes only — the values sent to the API are the
+raw date strings and are resolved as UTC server-side.
+
+## Date Range Convention
+
+**Every date range in Tidemill is closed-closed: `[start, end]` — both endpoints are inclusive.**
+
+A range written as `2025-07-01 to 2025-09-30` covers every UTC timestamp from
+`2025-07-01T00:00:00.000000Z` through `2025-09-30T23:59:59.999999Z`, inclusive
+of both boundaries.
+
+This convention applies everywhere:
+
+- **API query parameters** (`?start=2025-07-01&end=2025-09-30`) — both dates are inclusive calendar days.
+- **Python reports & notebooks** — pass the last day of the period as `end`, not the first of next month.
+- **Frontend picker** — stores and displays the inclusive last day.
+- **Metric SQL** — the cube filter layer coerces a bare `date` upper bound to the
+  last microsecond of that day so SQL `BETWEEN` is truly inclusive against
+  `TIMESTAMPTZ` columns.
+
+Period subscripts like "period start" / "period end" in the formulas below
+always refer to these inclusive boundaries.
+
 ## MRR — Monthly Recurring Revenue
 
 The normalized monthly revenue from all active subscriptions. Annual and other non-monthly intervals are converted to a monthly equivalent.
@@ -75,7 +110,7 @@ $$
 
 where:
 
-- $C_{\text{churned}}$ = customers from $C_{\text{start}}$ with a logo churn event in $[\text{start}, \text{end})$
+- $C_{\text{churned}}$ = customers from $C_{\text{start}}$ with a logo churn event in $[\text{start}, \text{end}]$
 - $C_{\text{start}}$ = customers active at period start, i.e. `first_active_at` $< \text{start}$ and (`churned_at` $\geq \text{start}$ or still active)
 
 Only customers in $C_{\text{start}}$ can appear in the numerator — customers who both join and churn within the period are excluded.
@@ -90,7 +125,7 @@ $$
 
 where:
 
-- $|\text{Churn MRR}|$ = absolute value of MRR lost from customers in $C_{\text{start}}$ with churn events in $[\text{start}, \text{end})$
+- $|\text{Churn MRR}|$ = absolute value of MRR lost from customers in $C_{\text{start}}$ with churn events in $[\text{start}, \text{end}]$
 - $\text{MRR}_{\text{start}}$ = total MRR at period start (cumulative movements before start)
 - $C_{\text{start}}$ = customers active at period start (`first_active_at` $< \text{start}$)
 
@@ -173,7 +208,7 @@ $$
 \text{Trial Conversion Rate} = \frac{T_{\text{converted}}(c)}{T_{\text{started}}(c)}
 $$
 
-where, for a cohort period $c = [\text{start}, \text{end})$:
+where, for a cohort period $c = [\text{start}, \text{end}]$:
 
 - $T_{\text{started}}(c)$ = trials with `started_at` $\in c$
 - $T_{\text{converted}}(c)$ = of those, trials with a non-null `converted_at` (at any time)
@@ -277,6 +312,6 @@ ChartMogul calls their metric **Annual Run Rate** (Annualized Run Rate), not Ann
 ## Conventions
 
 - **Money** is stored as integer cents (`BIGINT`). All amounts are dual-column: `*_cents` (original currency) and `*_base_cents` (converted to base currency at the daily FX rate). Aggregations use base currency by default; request the `currency` dimension for per-currency breakdowns.
-- **Dates** are `TIMESTAMPTZ` in the database, `YYYY-MM-DD` in the API.
+- **Dates** are `TIMESTAMPTZ` in the database (always UTC), `YYYY-MM-DD` in the API (resolved as UTC).
 - **Churn events** are recorded when a subscription's status transitions to a terminal state. A paused subscription is treated as churned for MRR purposes and reactivated when resumed.
 - **Cohort assignment** is immutable — a customer's cohort is set on their first subscription and never changes, even after churn and reactivation.
