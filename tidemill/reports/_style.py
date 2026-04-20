@@ -160,3 +160,51 @@ def format_period(period: Any, granularity: str = "month") -> str:
 def format_periods(periods: Any, granularity: str = "month") -> list[str]:
     """Vectorised :func:`format_period` for a sequence of timestamps."""
     return [format_period(p, granularity) for p in periods]
+
+
+def apply_period_xaxis(
+    fig: go.Figure,
+    periods: Any,
+    granularity: str = "month",
+    **update_xaxes_kwargs: Any,
+) -> go.Figure:
+    """Configure the x-axis of a time-series chart for a given granularity.
+
+    Keeps the axis temporal (so Plotly handles ordering, zoom, and
+    hover) and applies the canonical tick format — ``Sep 2025`` for
+    months, ``2025-W34`` for ISO weeks, ``2025-Q3`` for quarters, etc.
+
+    Args:
+        fig: Plotly figure whose x-axis should be configured.
+        periods: Iterable of period timestamps plotted on the x-axis.
+            Required for ``quarter`` (d3 has no quarter token, so we
+            supply explicit tick labels); used for boundary calculation
+            otherwise.
+        granularity: ``day``, ``week``, ``month``, ``quarter``, or
+            ``year``.
+        **update_xaxes_kwargs: Forwarded to ``fig.update_xaxes``.
+
+    Returns:
+        The same figure for chaining.
+    """
+    g = granularity.lower()
+    base: dict[str, Any] = {"type": "date"}
+    if g == "day":
+        base["tickformat"] = "%Y-%m-%d"
+    elif g == "week":
+        # d3 %G = ISO week year, %V = ISO week number (zero-padded).
+        base["tickformat"] = "%G-W%V"
+    elif g == "month":
+        base["tickformat"] = "%b %Y"
+        base["dtick"] = "M1"
+    elif g == "year":
+        base["tickformat"] = "%Y"
+        base["dtick"] = "M12"
+    elif g == "quarter":
+        ts = pd.to_datetime(list(periods))
+        base["tickmode"] = "array"
+        base["tickvals"] = list(ts)
+        base["ticktext"] = [format_period(t, "quarter") for t in ts]
+    base.update(update_xaxes_kwargs)
+    fig.update_xaxes(**base)
+    return fig

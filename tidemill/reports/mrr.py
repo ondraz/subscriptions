@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import plotly.graph_objects as go
 
-from tidemill.reports._style import COLORS, format_periods
+from tidemill.reports._style import COLORS, apply_period_xaxis, format_periods
 
 if TYPE_CHECKING:
     from tidemill.reports.client import TidemillClient
@@ -79,6 +79,8 @@ def waterfall(tm: TidemillClient, start: str, end: str, interval: str = "month")
     ]
     for col in money_cols:
         df[col] = df[col] / 100
+    df["period"] = pd.to_datetime(df["period"])
+    df.attrs["interval"] = interval
     return df
 
 
@@ -273,6 +275,8 @@ def trend(tm: TidemillClient, start: str, end: str, interval: str = "month") -> 
     raw = tm.mrr_waterfall(start, end, interval=interval)
     df = pd.DataFrame(raw)
     df["ending_mrr"] = df["ending_mrr"] / 100
+    df["period"] = pd.to_datetime(df["period"])
+    df.attrs["interval"] = interval
     return df
 
 
@@ -305,7 +309,10 @@ def style_waterfall(df: pd.DataFrame) -> pd.io.formats.style.Styler:
         "net_change",
         "ending_mrr",
     ]
-    styled = df.set_index("period")[display_cols]
+    interval = df.attrs.get("interval", "month")
+    display = df.copy()
+    display["period"] = format_periods(display["period"], interval)
+    styled = display.set_index("period")[display_cols]
     return styled.style.format("${:,.2f}")
 
 
@@ -337,13 +344,14 @@ def plot_breakdown(df: pd.DataFrame) -> go.Figure:
 
 
 def plot_waterfall(df: pd.DataFrame) -> go.Figure:
-    """Monthly MRR waterfall stacked bar + ending MRR line.
+    """MRR waterfall stacked bar + ending MRR line, per period.
 
     Args:
         df: DataFrame from :func:`waterfall`.
     """
+    interval = df.attrs.get("interval", "month")
     dm = df.set_index("period")
-    x = format_periods(dm.index, "month")
+    x = dm.index
 
     fig = go.Figure()
     fig.add_trace(
@@ -369,13 +377,14 @@ def plot_waterfall(df: pd.DataFrame) -> go.Figure:
     )
     fig.update_layout(
         barmode="relative",
-        title="Monthly MRR Waterfall",
+        title="MRR Waterfall",
         yaxis_title="MRR ($)",
         yaxis_tickprefix="$",
         yaxis_tickformat=",",
         legend={"orientation": "h", "y": -0.15},
         height=500,
     )
+    apply_period_xaxis(fig, x, interval)
     return fig
 
 
@@ -385,10 +394,11 @@ def plot_trend(df: pd.DataFrame) -> go.Figure:
     Args:
         df: DataFrame from :func:`trend`.
     """
+    interval = df.attrs.get("interval", "month")
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=format_periods(df.period, "month"),
+            x=df.period,
             y=df.ending_mrr,
             mode="lines+markers+text",
             fill="tozeroy",
@@ -405,4 +415,5 @@ def plot_trend(df: pd.DataFrame) -> go.Figure:
         yaxis_tickformat=",",
         yaxis_rangemode="tozero",
     )
+    apply_period_xaxis(fig, df.period, interval)
     return fig

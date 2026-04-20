@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import plotly.graph_objects as go
 
-from tidemill.reports._style import COLORS, format_periods
+from tidemill.reports._style import COLORS, apply_period_xaxis, format_period, format_periods
 
 if TYPE_CHECKING:
     from tidemill.reports.client import TidemillClient
@@ -55,11 +55,11 @@ def cohort(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
         size_by_cohort = pd.Series(dtype="int64")
         pivot = pd.DataFrame()
 
-    pivot = pivot.reindex(all_months)
+    pivot = pivot.reindex(all_months).sort_index()
     pivot.insert(0, "cohort_size", size_by_cohort.reindex(all_months).fillna(0).astype(int))
-    pivot.index = pivot.index.astype(str)
+    pivot.index = [format_period(p.to_timestamp(), "month") for p in pivot.index]
     pivot.index.name = "cohort_month"
-    return pivot.sort_index()
+    return pivot
 
 
 def nrr_grr(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
@@ -84,12 +84,14 @@ def nrr_grr(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
         grr_val = tm.retention(s, e, query_type="grr")
         rows.append(
             {
-                "month": m.strftime("%Y-%m"),
+                "month": m,
                 "nrr": nrr_val,
                 "grr": grr_val,
             }
         )
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    df.attrs["interval"] = "month"
+    return df
 
 
 # ── style ────────────────────────────────────────────────────────────
@@ -124,7 +126,10 @@ def style_nrr_grr(df: pd.DataFrame) -> pd.io.formats.style.Styler:
         df: DataFrame from :func:`nrr_grr`.
     """
     fmt_pct = lambda v: f"{v:.1%}" if v is not None else "N/A"  # noqa: E731
-    return df.set_index("month").style.format({"nrr": fmt_pct, "grr": fmt_pct})
+    interval = df.attrs.get("interval", "month")
+    display = df.copy()
+    display["month"] = format_periods(display["month"], interval)
+    return display.set_index("month").style.format({"nrr": fmt_pct, "grr": fmt_pct})
 
 
 # ── charts ───────────────────────────────────────────────────────────
@@ -170,7 +175,8 @@ def plot_nrr_grr(df: pd.DataFrame) -> go.Figure:
     Args:
         df: DataFrame from :func:`nrr_grr`.
     """
-    x = format_periods(df.month, "month")
+    interval = df.attrs.get("interval", "month")
+    x = df.month
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -202,4 +208,5 @@ def plot_nrr_grr(df: pd.DataFrame) -> go.Figure:
         yaxis_title="Retention (%)",
         yaxis_ticksuffix="%",
     )
+    apply_period_xaxis(fig, x, interval)
     return fig

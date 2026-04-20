@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import plotly.graph_objects as go
 
-from tidemill.reports._style import COLORS, format_periods
+from tidemill.reports._style import COLORS, apply_period_xaxis, format_periods
 
 if TYPE_CHECKING:
     from tidemill.reports.client import TidemillClient
@@ -92,7 +92,10 @@ def style_timeline(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     if len(df) == 0:
         return pd.DataFrame({"Note": ["No trial data"]}).style.hide(axis="index")
     fmt_rate = lambda v: f"{v:.0%}" if v is not None else "N/A"  # noqa: E731
-    return df.set_index("period").style.format({"conversion_rate": fmt_rate})
+    interval = df.attrs.get("interval", "month")
+    display = df.copy()
+    display["period"] = format_periods(display["period"], interval)
+    return display.set_index("period").style.format({"conversion_rate": fmt_rate})
 
 
 # ── charts ───────────────────────────────────────────────────────────
@@ -164,7 +167,7 @@ def plot_timeline(df: pd.DataFrame) -> go.Figure:
         return go.Figure().update_layout(title="No trial data")
 
     interval = df.attrs.get("interval", "month")
-    period_labels = format_periods(df.period, interval)
+    x = pd.to_datetime(df.period)
     pending = (df.started - df.converted - df.expired).clip(lower=0)
 
     fig = make_subplots(
@@ -175,19 +178,17 @@ def plot_timeline(df: pd.DataFrame) -> go.Figure:
     )
 
     fig.add_trace(
-        go.Bar(
-            name="Converted", x=period_labels, y=df.converted, marker_color=COLORS["converted"]
-        ),
+        go.Bar(name="Converted", x=x, y=df.converted, marker_color=COLORS["converted"]),
         row=1,
         col=1,
     )
     fig.add_trace(
-        go.Bar(name="Expired", x=period_labels, y=df.expired, marker_color=COLORS["expired"]),
+        go.Bar(name="Expired", x=x, y=df.expired, marker_color=COLORS["expired"]),
         row=1,
         col=1,
     )
     fig.add_trace(
-        go.Bar(name="Pending", x=period_labels, y=pending, marker_color=COLORS["pending"]),
+        go.Bar(name="Pending", x=x, y=pending, marker_color=COLORS["pending"]),
         row=1,
         col=1,
     )
@@ -195,7 +196,7 @@ def plot_timeline(df: pd.DataFrame) -> go.Figure:
     rates = [r * 100 if r is not None else None for r in df.conversion_rate]
     fig.add_trace(
         go.Scatter(
-            x=period_labels,
+            x=x,
             y=rates,
             mode="lines+markers+text",
             line={"color": COLORS["converted"], "width": 2.5},
@@ -214,4 +215,6 @@ def plot_timeline(df: pd.DataFrame) -> go.Figure:
     fig.update_yaxes(
         title_text="Conversion Rate (%)", ticksuffix="%", range=[0, 105], row=2, col=1
     )
+    apply_period_xaxis(fig, x, interval, row=1, col=1)
+    apply_period_xaxis(fig, x, interval, row=2, col=1)
     return fig

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import plotly.graph_objects as go
 
-from tidemill.reports._style import COLORS, format_periods
+from tidemill.reports._style import COLORS, apply_period_xaxis, format_periods
 
 if TYPE_CHECKING:
     from tidemill.reports.client import TidemillClient
@@ -143,12 +143,14 @@ def timeline(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
         revenue = tm.churn(s, e, type="revenue")
         rows.append(
             {
-                "month": m.strftime("%Y-%m"),
+                "month": m,
                 "logo_churn": float(logo) if logo is not None else None,
                 "revenue_churn": float(revenue) if revenue is not None else None,
             }
         )
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    df.attrs["interval"] = "month"
+    return df
 
 
 def monthly_lost_mrr(
@@ -169,6 +171,8 @@ def monthly_lost_mrr(
     raw = tm.mrr_waterfall(start, end, interval=interval)
     df = pd.DataFrame(raw)
     df["churn_dollars"] = df["churn"].apply(lambda c: abs(c) / 100)
+    df["period"] = pd.to_datetime(df["period"])
+    df.attrs["interval"] = interval
     return df
 
 
@@ -206,7 +210,10 @@ def style_timeline(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     Args:
         df: DataFrame from :func:`timeline`.
     """
-    return df.set_index("month").style.format(
+    interval = df.attrs.get("interval", "month")
+    display = df.copy()
+    display["month"] = format_periods(display["month"], interval)
+    return display.set_index("month").style.format(
         {
             "logo_churn": lambda v: f"{v:.1%}" if v is not None else "N/A",
             "revenue_churn": lambda v: f"{v:.1%}" if v is not None else "N/A",
@@ -332,7 +339,8 @@ def plot_timeline(df: pd.DataFrame) -> go.Figure:
     Args:
         df: DataFrame from :func:`timeline`.
     """
-    x = format_periods(df.month, "month")
+    interval = df.attrs.get("interval", "month")
+    x = df.month
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -364,18 +372,20 @@ def plot_timeline(df: pd.DataFrame) -> go.Figure:
         yaxis_ticksuffix="%",
         yaxis_rangemode="tozero",
     )
+    apply_period_xaxis(fig, x, interval)
     return fig
 
 
 def plot_monthly_lost_mrr(df: pd.DataFrame) -> go.Figure:
-    """Bar chart of churned MRR per month.
+    """Bar chart of churned MRR per period.
 
     Args:
         df: DataFrame from :func:`monthly_lost_mrr`.
     """
+    interval = df.attrs.get("interval", "month")
     fig = go.Figure(
         go.Bar(
-            x=format_periods(df.period, "month"),
+            x=df.period,
             y=df.churn_dollars,
             marker_color=COLORS["churn"],
             opacity=0.8,
@@ -384,10 +394,11 @@ def plot_monthly_lost_mrr(df: pd.DataFrame) -> go.Figure:
         )
     )
     fig.update_layout(
-        title="Monthly Churned MRR",
+        title="Churned MRR",
         yaxis_title="Lost MRR ($)",
         yaxis_tickprefix="$",
         yaxis_tickformat=",",
         yaxis_rangemode="tozero",
     )
+    apply_period_xaxis(fig, df.period, interval)
     return fig

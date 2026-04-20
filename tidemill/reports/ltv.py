@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import plotly.graph_objects as go
 
-from tidemill.reports._style import COLORS, format_periods
+from tidemill.reports._style import COLORS, apply_period_xaxis, format_periods
 
 if TYPE_CHECKING:
     from tidemill.reports.client import TidemillClient
@@ -64,14 +64,16 @@ def arpu_timeline(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
         customers = int(round(mrr_cents / arpu_cents)) if arpu_cents and mrr_cents else None
         rows.append(
             {
-                "month": m.strftime("%Y-%m"),
+                "month": m,
                 "active_customers": customers,
                 "mrr_dollars": mrr_cents / 100 if mrr_cents is not None else None,
                 "arpu_dollars": arpu_cents / 100 if arpu_cents is not None else None,
             }
         )
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    df.attrs["interval"] = "month"
+    return df
 
 
 def cohort(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
@@ -91,6 +93,7 @@ def cohort(tm: TidemillClient, start: str, end: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame(data)
+    df["cohort_month"] = pd.to_datetime(df["cohort_month"])
     df["avg_dollars"] = df.avg_revenue_per_customer.apply(lambda v: v / 100 if v else 0)
     df["total_dollars"] = df.total_revenue.apply(lambda v: v / 100 if v else 0)
     return df
@@ -130,8 +133,11 @@ def style_arpu_timeline(df: pd.DataFrame) -> pd.io.formats.style.Styler:
         df: DataFrame from :func:`arpu_timeline`.
     """
     cols = ["month", "active_customers", "mrr_dollars", "arpu_dollars"]
+    interval = df.attrs.get("interval", "month")
+    display = df.copy()
+    display["month"] = format_periods(display["month"], interval)
     return (
-        df[cols]
+        display[cols]
         .style.format(
             {
                 "active_customers": lambda v: f"{v:,}" if v is not None else "N/A",
@@ -152,8 +158,10 @@ def style_cohort(df: pd.DataFrame) -> pd.io.formats.style.Styler:
     if len(df) == 0:
         return pd.DataFrame({"Note": ["No cohort data"]}).style.hide(axis="index")
     cols = ["cohort_month", "customer_count", "avg_dollars", "total_dollars"]
+    display = df.copy()
+    display["cohort_month"] = format_periods(display["cohort_month"], "month")
     return (
-        df[cols]
+        display[cols]
         .style.format(
             {
                 "avg_dollars": "${:,.2f}",
@@ -177,10 +185,11 @@ def plot_arpu_timeline(df: pd.DataFrame) -> go.Figure:
     if len(valid) == 0:
         return go.Figure().update_layout(title="No ARPU data")
 
+    interval = df.attrs.get("interval", "month")
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=format_periods(valid.month, "month"),
+            x=valid.month,
             y=valid.arpu_dollars,
             mode="lines+markers+text",
             fill="tozeroy",
@@ -197,6 +206,7 @@ def plot_arpu_timeline(df: pd.DataFrame) -> go.Figure:
         yaxis_tickformat=",",
         yaxis_rangemode="tozero",
     )
+    apply_period_xaxis(fig, valid.month, interval)
     return fig
 
 
@@ -216,10 +226,10 @@ def plot_cohort(df: pd.DataFrame) -> go.Figure:
         cols=2,
         subplot_titles=["Avg Revenue per Customer by Cohort", "Customers per Cohort"],
     )
-    cohort_labels = format_periods(df.cohort_month, "month")
+    cohort_x = pd.to_datetime(df.cohort_month)
     fig.add_trace(
         go.Bar(
-            x=cohort_labels,
+            x=cohort_x,
             y=df.avg_dollars,
             marker_color=COLORS["arpu"],
             opacity=0.8,
@@ -232,7 +242,7 @@ def plot_cohort(df: pd.DataFrame) -> go.Figure:
     )
     fig.add_trace(
         go.Bar(
-            x=cohort_labels,
+            x=cohort_x,
             y=df.customer_count,
             marker_color=COLORS["nrr"],
             opacity=0.8,
@@ -245,6 +255,8 @@ def plot_cohort(df: pd.DataFrame) -> go.Figure:
     )
     fig.update_yaxes(title_text="Revenue ($)", tickprefix="$", tickformat=",", row=1, col=1)
     fig.update_yaxes(title_text="Count", row=1, col=2)
+    fig.update_xaxes(type="date", tickformat="%b %Y", dtick="M1", row=1, col=1)
+    fig.update_xaxes(type="date", tickformat="%b %Y", dtick="M1", row=1, col=2)
     fig.update_layout(height=450)
     return fig
 
