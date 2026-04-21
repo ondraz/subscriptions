@@ -28,3 +28,19 @@ class AuthConfig:
     @property
     def clerk_enabled(self) -> bool:
         return bool(self.clerk_secret_key)
+
+
+class OtelConfig:
+    """OpenTelemetry configuration."""
+
+    enabled: bool = os.environ.get("TIDEMILL_OTEL_ENABLED", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    service_name: str = os.environ.get("OTEL_SERVICE_NAME", "tidemill")
+    exporter_endpoint: str = os.environ.get(
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "http://otel-collector:4317",
+    )
+    environment: str = os.environ.get("TIDEMILL_ENV", "local")

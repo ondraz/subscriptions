@@ -1,0 +1,57 @@
+// Grafana Alloy: scrape Docker container stdout/stderr, parse trace_id /
+// span_id out of the tidemill log format, ship to Loki.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "10s"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.relabel.containers.output
+  forward_to    = [loki.process.tidemill.receiver]
+  relabel_rules = discovery.relabel.containers.rules
+}
+
+loki.process "tidemill" {
+  // Extract trace_id=<hex> and span_id=<hex> into labels so Grafana can
+  // jump from a log line to the Tempo trace with one click.
+  stage.regex {
+    expression = "trace_id=(?P<trace_id>[0-9a-f]+)\\s+span_id=(?P<span_id>[0-9a-f]+)"
+  }
+
+  stage.labels {
+    values = {
+      trace_id = "",
+      span_id  = "",
+    }
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

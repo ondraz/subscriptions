@@ -8,8 +8,10 @@ import os
 import signal
 from typing import TYPE_CHECKING
 
+from tidemill._logging import configure_logging
 from tidemill.bus import DLQ_TOPIC, EventConsumer, EventProducer
 from tidemill.database import make_engine, make_session_factory
+from tidemill.otel import init_otel
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -20,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 async def run_worker() -> None:
+    init_otel("tidemill-worker")
+    configure_logging("tidemill-worker")
     db_url = os.environ.get(
         "TIDEMILL_DATABASE_URL",
         "postgresql+asyncpg://localhost/tidemill",
@@ -169,5 +173,4 @@ async def _send_to_dlq(dlq: EventProducer, event: Event) -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     asyncio.run(run_worker())

@@ -225,9 +225,33 @@ The server bootstraps itself on first boot via [`cloud-init.yml`](https://github
 1. Updates packages and installs Docker
 2. Clones the repo to `/opt/tidemill`
 3. Generates a random Postgres password
-4. Starts Docker Compose (all 5 services)
-5. Enables unattended security updates
-6. Reboots if the kernel was updated
+4. Generates a random Grafana admin password (via Terraform `random_password`)
+5. Starts Docker Compose with both `docker-compose.yml` and `docker-compose.observability.yml`
+6. Enables unattended security updates
+7. Reboots if the kernel was updated
+
+### Observability
+
+OpenTelemetry is enabled by default. The server runs a self-contained Grafana stack:
+
+| Service        | Exposure        | Purpose                                         |
+|----------------|-----------------|-------------------------------------------------|
+| OTEL Collector | internal only   | OTLP receiver, forwards to Tempo and Prometheus |
+| Tempo          | internal only   | Trace storage (24 h retention)                  |
+| Loki           | internal only   | Log storage (7 d retention)                     |
+| Prometheus     | internal only   | Metrics storage (15 d retention)                |
+| Alloy          | internal only   | Scrapes Docker container logs → Loki           |
+| Grafana        | `grafana.<domain>` | Web UI (TLS via Caddy + Let's Encrypt)         |
+
+Fetch the Grafana admin password after `terraform apply`:
+
+```bash
+terraform output -raw grafana_admin_password
+```
+
+Open `https://grafana.<domain>` and log in as `admin`. Tempo, Loki, and Prometheus are pre-provisioned as datasources; the `Tidemill Overview` dashboard shows RED metrics for the API and worker.
+
+Disable the stack by setting `TIDEMILL_OTEL_ENABLED=false` in `.env` and restarting the api + worker containers (the observability services themselves can be left running or stopped with `docker compose -f docker-compose.observability.yml stop`).
 
 ### Destroy
 

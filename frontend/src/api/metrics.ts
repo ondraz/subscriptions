@@ -90,6 +90,6 @@ export function fetchTrialSeries<T>(params: MetricParams = {}): Promise<T> {
   return fetchMetric<T>('/api/metrics/trials/series', params)
 }
 
-export function fetchSummary<T>(): Promise<T> {
-  return get<T>('/api/metrics/summary')
+export function fetchSummary<T>(params: MetricParams = {}): Promise<T> {
+  return fetchMetric<T>('/api/metrics/summary', params)
 }

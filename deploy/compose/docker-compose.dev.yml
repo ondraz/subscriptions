@@ -2,15 +2,22 @@
 # infrastructure services in Docker.
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.observability.yml \
+#     -f docker-compose.dev.yml up -d
 #
-# Then start the API and worker from VS Code (or terminal):
+# Then start the API and worker from VS Code (or terminal). With `direnv`
+# loading the repo-root .env, TIDEMILL_OTEL_ENABLED + OTEL_EXPORTER_OTLP_ENDPOINT
+# are already in your shell — the only secrets you still need come from
+# deploy/compose/.env (POSTGRES_PASSWORD, GRAFANA_ADMIN_PASSWORD).
+#
 #   TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:<POSTGRES_PASSWORD>@localhost:5432/tidemill \
 #   KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
 #   AUTH_ENABLED=false \
 #   uv run uvicorn tidemill.api.app:app --host 0.0.0.0 --port 8000 --reload
 #
-# Use the POSTGRES_PASSWORD from deploy/compose/.env
+# Grafana: http://localhost:3000 (admin / GRAFANA_ADMIN_PASSWORD from deploy/compose/.env)
 
 services:
   postgres:
@@ -37,3 +44,22 @@ services:
 
   caddy:
     profiles: [disabled]
+
+  # Expose observability endpoints on the host so api/worker running from the
+  # IDE/shell can push OTLP traces+metrics, and the developer can open Grafana.
+  otel-collector:
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+
+  grafana:
+    ports:
+      - "3000:3000"
+
+  prometheus:
+    ports:
+      - "9090:9090"
+
+  loki:
+    ports:
+      - "3100:3100"

@@ -15,17 +15,39 @@ locals {
 }
 
 resource "hcloud_zone_rrset" "server_a" {
-  zone = hcloud_zone.main.id
-  name = local.subdomain
-  type = "A"
-  ttl  = 300
+  zone    = hcloud_zone.main.id
+  name    = local.subdomain
+  type    = "A"
+  ttl     = 300
   records = [{ value = hcloud_server.tidemill.ipv4_address }]
 }
 
 resource "hcloud_zone_rrset" "server_aaaa" {
-  zone = hcloud_zone.main.id
-  name = local.subdomain
-  type = "AAAA"
-  ttl  = 300
+  zone    = hcloud_zone.main.id
+  name    = local.subdomain
+  type    = "AAAA"
+  ttl     = 300
+  records = [{ value = hcloud_server.tidemill.ipv6_address }]
+}
+
+# grafana.<domain> — observability UI. Tempo, Loki, Prometheus, OTEL Collector
+# stay on the internal docker network; only Grafana is publicly reachable.
+locals {
+  grafana_subdomain = local.subdomain == "@" ? "grafana" : "grafana.${local.subdomain}"
+}
+
+resource "hcloud_zone_rrset" "grafana_a" {
+  zone    = hcloud_zone.main.id
+  name    = local.grafana_subdomain
+  type    = "A"
+  ttl     = 300
+  records = [{ value = hcloud_server.tidemill.ipv4_address }]
+}
+
+resource "hcloud_zone_rrset" "grafana_aaaa" {
+  zone    = hcloud_zone.main.id
+  name    = local.grafana_subdomain
+  type    = "AAAA"
+  ttl     = 300
   records = [{ value = hcloud_server.tidemill.ipv6_address }]
 }

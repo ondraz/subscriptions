@@ -22,6 +22,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = []
+observability = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.27",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
+    "opentelemetry-instrumentation-asyncpg>=0.48b0",
+    "opentelemetry-instrumentation-aiokafka>=0.48b0",
+]
 
 [tool.uv]
 exclude-newer = "14 days"
@@ -116,3 +125,7 @@ ignore_missing_imports = true
 module = ["pandas", "pandas.*"]
 ignore_missing_imports = true
 follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = ["opentelemetry", "opentelemetry.*"]
+ignore_missing_imports = true

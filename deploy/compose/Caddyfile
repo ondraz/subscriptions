@@ -24,3 +24,7 @@
 		file_server
 	}
 }
+
+grafana.{$DOMAIN:localhost} {
+	reverse_proxy grafana:3000
+}

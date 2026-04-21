@@ -1,4 +1,4 @@
-.PHONY: help docs check check-integration seed dev dev-down dev-reset lint test typecheck install install-dev install-pre-commit frontend frontend-build
+.PHONY: help docs check check-integration seed dev dev-up dev-down dev-reset lint test typecheck install install-dev install-pre-commit frontend frontend-build dashboards-pull dashboards-diff
 
 .DEFAULT_GOAL := help
 
@@ -59,7 +59,7 @@ check-integration: ## Run integration tests (starts PostgreSQL in Docker)
 		exit $$rc
 
 
-COMPOSE_LOCAL := docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.local.yml
+COMPOSE_LOCAL := docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.observability.yml -f deploy/compose/docker-compose.local.yml
 
 seed: ## Seed Stripe test data
 	./deploy/seed/seed.sh --cleanup-only
@@ -67,12 +67,21 @@ seed: ## Seed Stripe test data
 	@$(COMPOSE_LOCAL) stop
 
 
-COMPOSE_DEV := docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.dev.yml
+frontend: ## Start frontend dev server on :5173
+	cd frontend && npm run dev
 
-dev: ## Start dev environment
+frontend-build: ## Build frontend for production
+	cd frontend && npm ci && npm run build
+
+COMPOSE_DEV := docker compose \
+	-f deploy/compose/docker-compose.yml \
+	-f deploy/compose/docker-compose.observability.yml \
+	-f deploy/compose/docker-compose.dev.yml
+
+dev-up: ## Start dev environment
 	$(COMPOSE_DEV) up -d
 	@echo ""
-	@echo "Infrastructure running: PostgreSQL :5432, Redpanda :9092"
+	@echo "Infrastructure running: PostgreSQL :5432, Redpanda :9092, OTEL :4317, Grafana :3000"
 	@echo "Starting stripe listen (PID written to /tmp/stripe-listen-dev.pid)..."
 	@stripe listen --forward-to http://localhost:8000/api/webhooks/stripe --latest > /tmp/stripe-listen-dev.log 2>&1 & echo $$! > /tmp/stripe-listen-dev.pid
 
@@ -83,16 +92,25 @@ dev-down: ## Stop dev environment
 dev-reset: ## Stop dev environment and delete volumes
 	$(COMPOSE_DEV) down -v
 
+dev: ## Start full dev environment + API + worker + frontend (stops services on exit)
+	@$(MAKE) dev-up
+	@echo "Starting API on :8000 (logs: /tmp/tidemill-api-dev.log)..."
+	@uv run uvicorn tidemill.api.app:app --host 0.0.0.0 --port 8000 --reload > /tmp/tidemill-api-dev.log 2>&1 & echo $$! > /tmp/tidemill-api-dev.pid
+	@echo "Starting worker (logs: /tmp/tidemill-worker-dev.log)..."
+	@uv run python -m tidemill.worker > /tmp/tidemill-worker-dev.log 2>&1 & echo $$! > /tmp/tidemill-worker-dev.pid
+	@trap 'kill $$(cat /tmp/tidemill-api-dev.pid 2>/dev/null) $$(cat /tmp/tidemill-worker-dev.pid 2>/dev/null) 2>/dev/null || true; rm -f /tmp/tidemill-api-dev.pid /tmp/tidemill-worker-dev.pid; $(MAKE) -C "$(CURDIR)" dev-down' EXIT INT TERM; cd frontend && npm run dev
 
-frontend: ## Start frontend dev server on :5173
-	cd frontend && npm run dev
-
-frontend-build: ## Build frontend for production
-	cd frontend && npm ci && npm run build
 
 docs: ## Start MkDocs dev server on :8001
 	@echo "Starting MkDocs server..."
 	uv run mkdocs serve -a 127.0.0.1:8001 -f docs/mkdocs.yml
+
+
+dashboards-pull: ## Export Grafana dashboards to JSON files (then commit)
+	@./scripts/grafana-dashboards.py pull
+
+dashboards-diff: ## Show drift between Grafana's live dashboards and committed JSON
+	@./scripts/grafana-dashboards.py diff
 
 
 .PHONY: install-post-hooks

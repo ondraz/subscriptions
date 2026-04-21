@@ -54,6 +54,11 @@ services:
       CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
       CLERK_JWKS_URL: ${CLERK_JWKS_URL:-}
       CORS_ORIGINS: https://${DOMAIN:-localhost}
+      TIDEMILL_OTEL_ENABLED: ${TIDEMILL_OTEL_ENABLED:-true}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+      OTEL_SERVICE_NAME: tidemill-api
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
+      TIDEMILL_ENV: ${TIDEMILL_ENV:-single-server}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
       interval: 5s
@@ -80,6 +85,11 @@ services:
     environment:
       TIDEMILL_DATABASE_URL: postgresql+asyncpg://tidemill:${POSTGRES_PASSWORD}@postgres:5432/tidemill
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      TIDEMILL_OTEL_ENABLED: ${TIDEMILL_OTEL_ENABLED:-true}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4317}
+      OTEL_SERVICE_NAME: tidemill-worker
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
+      TIDEMILL_ENV: ${TIDEMILL_ENV:-single-server}
     depends_on:
       postgres:
         condition: service_healthy

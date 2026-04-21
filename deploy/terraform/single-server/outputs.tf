@@ -28,6 +28,17 @@ output "url" {
   value       = "https://${var.domain}"
 }
 
+output "grafana_url" {
+  description = "URL of Grafana (observability UI)"
+  value       = "https://grafana.${var.domain}"
+}
+
+output "grafana_admin_password" {
+  description = "Grafana admin password (username: admin)"
+  value       = random_password.grafana_admin.result
+  sensitive   = true
+}
+
 output "ssh_command" {
   description = "SSH command via Tailscale (use Tailscale machine name or IP)"
   value       = "ssh root@${var.server_name}"

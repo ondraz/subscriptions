@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Tidemill app metrics arrive via OTEL Collector's remote_write;
+# no scrape targets for the app itself. Scrape infrastructure here
+# if/when exporters are added.
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

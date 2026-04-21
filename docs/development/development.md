@@ -43,12 +43,14 @@ The API is at `http://localhost:8000`, the frontend at `http://localhost:5173`. 
 
 ## What `make dev` Does
 
-Starts infrastructure services in Docker and a background `stripe listen` process:
+Starts infrastructure + observability services in Docker and a background `stripe listen` process:
 
-| Service    | Port  | Description              |
-|------------|-------|--------------------------|
-| PostgreSQL | :5432 | `tidemill` database      |
-| Redpanda   | :9092 | Kafka-compatible broker  |
+| Service        | Port   | Description                                      |
+|----------------|--------|--------------------------------------------------|
+| PostgreSQL     | :5432  | `tidemill` database                              |
+| Redpanda       | :9092  | Kafka-compatible broker                          |
+| OTEL Collector | :4317  | OTLP gRPC receiver (traces + metrics)            |
+| Grafana        | :3000  | Observability UI — traces, logs, metrics         |
 
 Additionally, `stripe listen` runs in the background, forwarding Stripe webhook events to `http://localhost:8000/api/webhooks/stripe`. Its PID is written to `/tmp/stripe-listen-dev.pid` and logs go to `/tmp/stripe-listen-dev.log`.
 
@@ -56,11 +58,52 @@ The API, worker, and frontend are **not** started in Docker — you run them fro
 
 ### Docker Compose Overlays
 
-`make dev` uses `docker-compose.dev.yml` on top of the base `docker-compose.yml`. This overlay:
+`make dev` chains three compose files on top of the base `docker-compose.yml`:
 
-- Exposes PostgreSQL and Redpanda ports to the host
+- `docker-compose.observability.yml` — Tempo, Loki, Prometheus, OTEL Collector, Alloy, Grafana
+- `docker-compose.dev.yml` — exposes PostgreSQL/Redpanda/OTEL/Grafana on host ports; disables api/worker/caddy (you run them locally)
 - Re-advertises Redpanda on `localhost` (instead of the container hostname)
-- Disables the API, worker, and Caddy services (you run these locally)
+
+For comparison, `make seed` uses `docker-compose.local.yml` which runs the full stack (API + worker) inside Docker — see [Testing](testing.md).
+
+### Observability
+
+Grafana is available at [http://localhost:3000](http://localhost:3000). Log in as `admin` with `GRAFANA_ADMIN_PASSWORD` from `deploy/compose/.env`. Tempo, Loki, and Prometheus are pre-provisioned as datasources.
+
+Trace + metric export from the host-run API/worker is **on by default** — `.env.example` sets `TIDEMILL_OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`, which `direnv` exports into your shell via `.envrc`. Set `TIDEMILL_OTEL_ENABLED=false` in `.env` to opt out.
+
+Logs from containers are scraped by Alloy and shipped to Loki. Host-run API/worker logs reach Loki only when you pipe them through `scripts/ship-to-loki.py`:
+
+```bash
+uv run uvicorn tidemill.api.app:app --host 0.0.0.0 --port 8000 --reload 2>&1 \
+    | scripts/ship-to-loki.py --service tidemill-api
+
+uv run python -m tidemill.worker 2>&1 \
+    | scripts/ship-to-loki.py --service tidemill-worker
+```
+
+The wrapper tees stdin to your terminal (so reload messages etc. stay visible) and POSTs batches to Loki's push API at `http://localhost:3100`. It extracts `trace_id` / `span_id` / log level into labels, so trace→log correlation in Grafana works for host-run processes the same way it does for containerized services. Without the pipe, the `trace_id=<hex>` prefix on your terminal still lets you paste the ID into Grafana → Tempo manually.
+
+#### Editing dashboards
+
+Dashboards live as JSON in `deploy/compose/observability/grafana/dashboards/`. Grafana loads them on container start and re-reads the directory every 30 seconds, so edits on disk show up live.
+
+The workflow to persist UI edits to git:
+
+```bash
+# 1. Edit the dashboard in Grafana, then Save (Ctrl-S). The change is written to
+#    Grafana's embedded DB, not to the JSON files.
+
+# 2. Preview the drift between the live Grafana and what's committed.
+make dashboards-diff
+
+# 3. Pull the edits into the JSON files and commit them.
+make dashboards-pull
+git add deploy/compose/observability/grafana/dashboards/
+git commit -m "dashboards: <what changed>"
+```
+
+The pull script authenticates as `admin` using `GRAFANA_ADMIN_PASSWORD` (default `admin`), normalizes Grafana's JSON (strips `id`/`version` churn), and writes one file per dashboard named after its title. Run it against a non-local Grafana by setting `GRAFANA_URL` / `GRAFANA_USER` / `GRAFANA_ADMIN_PASSWORD`.
 
 For comparison, `make seed` uses `docker-compose.local.yml` which runs the full stack (API + worker) inside Docker — see [Testing](testing.md).
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -11,31 +10,19 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 
+from tidemill._logging import configure_logging
 from tidemill.bus import EventProducer
 from tidemill.config import AuthConfig
 from tidemill.database import make_engine, make_session_factory
+from tidemill.otel import init_otel, instrument_fastapi
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-# ── Logging ────────────────────────────────────────────────────────────────
-# Use uvicorn's DefaultFormatter so tidemill logs share the same colored
-# "LEVEL:   message" prefix as uvicorn access / error logs.
-
-_log_level = os.environ.get("TIDEMILL_LOG_LEVEL", "DEBUG").upper()
-
-_handler = logging.StreamHandler()
-_handler.setFormatter(
-    # DefaultFormatter inherits ColourizedFormatter — auto-detects TTY,
-    # colorizes the level prefix, and pads to a fixed width.
-    __import__("uvicorn.logging", fromlist=["DefaultFormatter"]).DefaultFormatter(
-        fmt="%(levelprefix)s %(name)s - %(message)s",
-    ),
-)
-_tidemill_logger = logging.getLogger("tidemill")
-_tidemill_logger.setLevel(getattr(logging, _log_level, logging.DEBUG))
-_tidemill_logger.addHandler(_handler)
-_tidemill_logger.propagate = False
+# OTEL must be initialized before the FastAPI app is constructed so the
+# LoggingInstrumentor log-record factory is in place for startup logs.
+init_otel("tidemill-api")
+configure_logging("tidemill-api")
 
 
 @asynccontextmanager
@@ -85,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Tidemill API", lifespan=lifespan)
+instrument_fastapi(app)
 
 # ── CORS ────────────────────────────────────────────────────────────────
 

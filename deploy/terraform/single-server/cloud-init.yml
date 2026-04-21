@@ -49,12 +49,15 @@ runcmd:
     CLERK_PUBLISHABLE_KEY=${clerk_publishable_key}
     CLERK_SECRET_KEY=${clerk_secret_key}
     CLERK_JWKS_URL=${clerk_jwks_url}
+    GRAFANA_ADMIN_PASSWORD=${grafana_admin_password}
+    TIDEMILL_OTEL_ENABLED=true
+    TIDEMILL_ENV=single-server
     EOF
   - chown tidemill:tidemill /opt/tidemill/deploy/compose/.env
   - chmod 600 /opt/tidemill/deploy/compose/.env
 
-  # Start services as tidemill user
-  - su - tidemill -s /bin/bash -c 'docker compose -f /opt/tidemill/deploy/compose/docker-compose.yml up -d'
+  # Start services as tidemill user (app + observability stack)
+  - su - tidemill -s /bin/bash -c 'docker compose -f /opt/tidemill/deploy/compose/docker-compose.yml -f /opt/tidemill/deploy/compose/docker-compose.observability.yml up -d'
 
   # Enable automatic security updates
   - systemctl enable --now unattended-upgrades

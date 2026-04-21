@@ -77,8 +77,12 @@ export function useTrialSeries<T = unknown>(params: MetricParams) {
   return useQuery({ queryKey: ['metrics', 'trials', 'series', params], queryFn: () => fetchTrialSeries<T>(params), staleTime: STALE })
 }
 
-export function useSummary<T = unknown>() {
-  return useQuery({ queryKey: ['metrics', 'summary'], queryFn: () => fetchSummary<T>(), staleTime: STALE })
+export function useSummary<T = unknown>(params: MetricParams = {}) {
+  return useQuery({
+    queryKey: ['metrics', 'summary', params],
+    queryFn: () => fetchSummary<T>(params),
+    staleTime: STALE,
+  })
 }
 
 export function useMetric<T = unknown>(endpoint: string, params: MetricParams) {

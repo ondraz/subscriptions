@@ -1,4 +1,5 @@
 import { useSummary } from '@/hooks/useMetrics'
+import { useTimeRange } from '@/hooks/useTimeRange'
 import { KPICard } from '@/components/charts/KPICard'
 import { formatCurrency, formatPercent, formatNumber } from '@/lib/formatters'
 
@@ -16,7 +17,8 @@ interface SummaryData {
 }
 
 export function SummaryReport() {
-  const { data, isLoading } = useSummary<SummaryData>()
+  const { start, end } = useTimeRange({ range: 'last_1y' })
+  const { data, isLoading } = useSummary<SummaryData>({ start, end })
 
   return (
     <div>

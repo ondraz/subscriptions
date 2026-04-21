@@ -93,6 +93,8 @@ tidemill/
 ├── events.py                # Internal event schema (dataclasses)
 ├── fx.py                    # Foreign exchange rate conversion
 ├── bus.py                   # Kafka producer/consumer
+├── otel.py                  # OpenTelemetry bootstrap (optional, off by default)
+├── _logging.py              # Shared stdout logging config (adds trace_id/span_id)
 ├── state.py                 # Core consumer: events → base tables
 ├── connectors/
 │   ├── base.py              # WebhookConnector + DatabaseConnector ABCs
@@ -194,6 +196,9 @@ Copy `.env.example` to `.env` and configure:
 - `STRIPE_API_KEY` — Stripe API key
 - `STRIPE_WEBHOOK_SECRET` — Webhook signing secret
 - `KAFKA_BOOTSTRAP_SERVERS` — Kafka/Redpanda address
+- `TIDEMILL_OTEL_ENABLED` — turn on OpenTelemetry tracing/metrics (default `false`)
+- `OTEL_EXPORTER_OTLP_ENDPOINT` — OTLP gRPC endpoint (defaults to `http://otel-collector:4317`)
+- `GRAFANA_ADMIN_PASSWORD` — admin password when running the observability compose stack
 
 ## Common Workflows
 

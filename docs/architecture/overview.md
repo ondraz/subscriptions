@@ -153,6 +153,22 @@ Kafka gives us properties that a simple in-process event bus cannot:
 
 For development and single-node deployments, [Redpanda](https://redpanda.com/) is a Kafka-compatible alternative with simpler operations (~256 MB RAM vs 1-2 GB for Kafka).
 
+## Observability
+
+Tidemill ships optional OpenTelemetry instrumentation for the API and worker, gated behind `TIDEMILL_OTEL_ENABLED` (defaults off for the Python package, on in the single-server deploy).
+
+| Signal  | Source                                         | Storage    |
+|---------|------------------------------------------------|------------|
+| Traces  | FastAPI, SQLAlchemy, asyncpg, aiokafka (auto)  | Tempo      |
+| Metrics | Auto-instrumented RED + DB timings             | Prometheus |
+| Logs    | stdout (Docker) → Alloy scraper                | Loki       |
+
+All signals flow through a self-hosted Grafana stack: app → OTEL Collector → Tempo/Prometheus, Docker logs → Alloy → Loki. Logs carry `trace_id=<hex>` / `span_id=<hex>` so Grafana can jump between logs and traces via datasource `derivedFields` and `tracesToLogsV2` links.
+
+The stack is defined in `deploy/compose/docker-compose.observability.yml` and is included automatically by both `make dev` (local) and the single-server Terraform deploy. The Kubernetes deploy does not bundle the stack — point the app at an external OTLP endpoint via `OTEL_EXPORTER_OTLP_ENDPOINT`.
+
+See [deployment.md](../development/deployment.md#observability) for operator access details.
+
 ## MVP Scope
 
 ### P0 (Must-Have)
