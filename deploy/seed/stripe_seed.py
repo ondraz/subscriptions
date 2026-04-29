@@ -419,8 +419,12 @@ def seed(num_customers: int, num_months: int) -> str:
 
         # Rotate currency only for plans that have non-USD price variants
         # (Starter flat-fee and Enterprise monthly); everything else
-        # stays USD so the metered tiers stay valid.
-        eligible = plan == "Starter" or (plan == "Enterprise" and billing != "year")
+        # stays USD so the metered tiers stay valid.  Upgrade/downgrade
+        # archetypes also stay USD — Professional has no EUR/GBP variants,
+        # so a non-USD Starter can't be swapped onto it mid-flight.
+        eligible = (
+            plan == "Starter" or (plan == "Enterprise" and billing != "year")
+        ) and action not in ("upgrade", "downgrade")
         currency = CURRENCIES[i % len(CURRENCIES)] if eligible else "usd"
         items = subscription_items(plans, plan, billing, currency)
 

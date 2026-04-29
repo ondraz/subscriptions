@@ -45,6 +45,9 @@ from typing import Any
 
 from sqlalchemy import MetaData
 
+from tidemill.metrics.query import Cube
+from tidemill.segments.model import SegmentDef
+
 
 @dataclass
 class QuerySpec:
@@ -52,11 +55,14 @@ class QuerySpec:
 
     Dimensions and filters reference names defined in the model (e.g., "plan_interval",
     "customer_country"). The model validates them and compiles to SQL via fragment
-    composition. See [Cubes & Query Algebra](cubes.md) for details.
+    composition. See [Cubes & Query Algebra](cubes.md) and [Segmentation](segments.md).
 
-    When dimensions is set, query() returns a list of dicts:
-        [{"plan_interval": "monthly", "mrr": 4200.00}, ...]
-    When dimensions is empty, query() returns a scalar or time series as usual.
+    Return shape:
+    - dimensions set → list of dicts, one row per group
+    - compare set   → list of dicts, one row per `segment_id` (ratio metrics
+                      return per-segment numerator/denominator pairs already
+                      divided — see "Compare-mode return shape" below)
+    - otherwise     → scalar or time series
     """
     # Dimensions to group by (names from model.Dimensions)
     #   "plan_id"          — one row per plan
@@ -65,6 +71,8 @@ class QuerySpec:
     #   "source_id"        — one row per billing source
     #   "currency"         — one row per currency (uses *_cents, not base-currency aggregate)
     #   "cohort_month"     — retention-specific: one row per cohort
+    #   Computed dims from MRR cubes: "mrr_band", "arr_band", "tenure_months",
+    #   "cohort_month" (CASE WHEN / DATE_TRUNC expressions)
     dimensions: list[str] = field(default_factory=list)
 
     # Filters: dimension_name → value (equality) or {op: value} for other operators
@@ -75,6 +83,17 @@ class QuerySpec:
     # Time bucketing
     granularity: str | None = None        # day | week | month | quarter | year
     time_range: tuple[str, str] | None = None
+
+    # Segmentation — see segments.md for the AST + compilation model
+    #   segment  — a parsed SegmentDef applied as a universe filter (AND'd
+    #              into every row, narrows the rowset for the whole query)
+    #   compare  — list of (segment_id, SegmentDef) pairs; compile() emits a
+    #              CROSS JOIN over a VALUES list of segment_ids and a compound
+    #              OR predicate so each row is tagged with every branch it
+    #              matches (overlapping segments produce duplicate rows, by
+    #              design)
+    segment: SegmentDef | None = None
+    compare: tuple[tuple[str, SegmentDef], ...] | None = None
 
 
 class Metric(ABC):
@@ -106,6 +125,19 @@ class Metric(ABC):
         """Event types this metric subscribes to (ingestion mode).
         Return empty list if metric only supports direct-query mode."""
         return []
+
+    @property
+    def primary_cube(self) -> type[Cube]:
+        """The cube exposed as this metric's filter / group-by surface.
+
+        Used by the discovery endpoint (`GET /api/metrics/{name}/fields`)
+        and the segment validator so generic routers don't have to
+        hard-code which cube belongs to which metric. Defaults to
+        `self.model`. Metrics with multiple cubes (e.g. churn — event +
+        state) override to pick the one that carries the richest
+        end-user filter set.
+        """
+        return self.model
 
     def register_tables(self, metadata: MetaData) -> None:
         """Define SQLAlchemy tables owned by this metric.
@@ -349,16 +381,19 @@ async def _current_mrr(self, at: date | None, spec: QuerySpec | None):
     if at:
         q = q + m.filter("snapshot_at", "<=", at)
 
-    # Apply user-requested dimensions and filters from spec
-    if spec:
-        q = q + m.apply_spec(spec)
+    # Apply user-requested dimensions, filters, segment (universe filter),
+    # and compare (per-branch slicing) from spec.  build_spec_fragment is
+    # the single bridge between QuerySpec and Cube — see
+    # tidemill/segments/compiler.py.
+    q = q + await build_spec_fragment(m, spec, self.db)
 
     stmt, params = q.compile(m)
     result = await self.db.execute(stmt, params)
     rows = result.mappings().all()
 
-    # Scalar when no dimensions, list of dicts when grouped
-    if not spec or not spec.dimensions:
+    # Scalar when no dimensions and no compare, list of dicts otherwise.
+    has_compare = bool(spec and spec.compare)
+    if not spec or (not spec.dimensions and not has_compare):
         return rows[0]["mrr"] if rows else 0
     return [dict(r) for r in rows]
 ```
@@ -419,8 +454,7 @@ async def _mrr_breakdown(self, start: date, end: date, spec: QuerySpec | None):
         + mm.filter("occurred_at", "between", (start, end))
     )
 
-    if spec:
-        q = q + mm.apply_spec(spec)
+    q = q + await build_spec_fragment(mm, spec, self.db)
 
     stmt, params = q.compile(mm)
     result = await self.db.execute(stmt, params)
@@ -644,8 +678,7 @@ q = (
 )
 if at:
     q = q + sm.filter("snapshot_at", "<=", at)
-if spec:
-    q = q + sm.apply_spec(spec)
+q = q + await build_spec_fragment(sm, spec, self.db)
 ```
 ```sql
 SELECT SUM(s.mrr_base_cents) AS mrr,
@@ -819,12 +852,14 @@ The same `engine.query()` call is used from FastAPI, CLI, and Jupyter. The HTTP 
 
 ## Segmentation (QuerySpec)
 
-`QuerySpec` replaces the old hardcoded filter approach with a model-driven system. It does two things:
+`QuerySpec` carries four orthogonal slicing concerns:
 
 1. **Filters** — restrict which rows are included (`filters` dict → WHERE clauses)
 2. **Dimensional cuts** — split the result by named dimensions (`dimensions` list → GROUP BY)
+3. **Segment** — universe filter from a saved `SegmentDef` (AND'd into every row)
+4. **Compare** — list of `(segment_id, SegmentDef)` pairs producing one tagged row per matching branch (CROSS JOIN VALUES + compound OR)
 
-Both reference dimension names defined in the metric's [Cube](cubes.md). The model validates names at query time and resolves joins automatically.
+All four reference dimension names defined in the metric's [Cube](cubes.md), or attribute keys / static joins routed through the [segment compiler](segments.md). Every metric's `query()` calls `await build_spec_fragment(cube, spec, self.db)` exactly once; that helper folds all four concerns into the QueryFragment.
 
 ### Available Dimensions
 
@@ -839,8 +874,29 @@ Each metric's cube declares which dimensions are available. Common dimensions ac
 | `customer_country` | `c.country` | customer | Churn rate by country |
 | `movement_type` | `m.movement_type` | none (MRR movement only) | MRR breakdown |
 | `cohort_month` | `rc.cohort_month` | none (retention only) | Cohort matrix |
+| `mrr_band` / `arr_band` | CASE expression on `mrr_base_cents` | customer (for `c.created_at`) | Bucketed segmentation |
+| `tenure_months` | `AGE(now, c.created_at)` | customer | Age cohorts |
+
+Computed dimensions (`mrr_band`, `arr_band`, `tenure_months`, `cohort_month` on the MRR/Churn cubes; `customer_created_month` on `LtvInvoiceCube`) are SQL expressions on `Dim.column` — they appear in the `/fields` discovery endpoint alongside regular dimensions.
 
 Multiple dimensions can be combined: `dimensions=["plan_interval", "customer_country"]` gives MRR for each interval × country combination.
+
+### Compare-mode return shape (ratio metrics)
+
+For aggregate metrics (MRR, MRR breakdown, MRR series), compare mode returns one row per `segment_id` with the metric's measures duplicated per branch — straight from the SQL.
+
+For **ratio metrics** (logo / revenue churn rate, NRR / GRR, ARPU, simple LTV, trial conversion rate), the numerator and denominator are separate sub-queries — each one runs through `build_spec_fragment` so both pick up the same compare payload, then the metric divides per `segment_id` in Python and returns a list:
+
+```python
+[
+    {"segment_id": "seg_a", "logo_churn_rate": 0.038, "churn_count": 12, "active_at_start": 320},
+    {"segment_id": "seg_b", "logo_churn_rate": 0.057, "churn_count":  8, "active_at_start": 140},
+]
+```
+
+`tidemill/metrics/churn/metric.py` is the reference — `_logo_churn`, `_revenue_churn`, `_active_at_start_count`, and `_mrr_at_start_per_segment` all accept the spec and return per-segment dicts when compare is set. The same pattern is used in `LtvMetric._historical_arpu`, `RetentionMetric._revenue_retention`, and `TrialsMetric._funnel`.
+
+**Cohort-matrix caveat.** Per-segment retention matrices would be a 4-D result (cohort × active month × customer × segment); the chart can't consume it today. `RetentionMetric._cohort_matrix` and `LtvMetric._cohort_ltv` strip `compare` (via `_filter_only(spec)`) and treat compare like a plain segment list — the matrix renders the union of customers matching any branch.
 
 ### Return Shape
 

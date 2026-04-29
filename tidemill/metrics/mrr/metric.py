@@ -10,6 +10,7 @@ from sqlalchemy import text
 from tidemill.metrics.base import Metric, QuerySpec
 from tidemill.metrics.mrr.cubes import MRRMovementCube, MRRSnapshotCube
 from tidemill.metrics.registry import register
+from tidemill.segments.compiler import build_spec_fragment
 
 if TYPE_CHECKING:
     from datetime import date
@@ -297,6 +298,7 @@ class MrrMetric(Metric):
         spec: QuerySpec | None,
     ) -> Any:
         use_original = spec and "currency" in (spec.dimensions or [])
+        has_compare = bool(spec and spec.compare)
 
         if at is not None:
             # Historical MRR: cumulative sum of movements through end-of-day
@@ -308,27 +310,24 @@ class MrrMetric(Metric):
             mm = self.movement_model
             measure = mm.measures.amount_original if use_original else mm.measures.amount
             dq = measure + mm.filter("occurred_at", "<=", at)
-            if spec:
-                dq = dq + mm.apply_spec(spec)
+            dq = dq + await build_spec_fragment(mm, spec, self.db)
             stmt, params = dq.compile(mm)
             result = await self.db.execute(stmt, params)
             rows = result.mappings().all()
-            if not spec or not spec.dimensions:
-                label = "amount_original" if use_original else "amount_base"
-                return float(rows[0][label] or 0) if rows else 0
             src = "amount_original" if use_original else "amount_base"
+            if not spec or (not spec.dimensions and not has_compare):
+                return float(rows[0][src] or 0) if rows else 0
             return [{("mrr" if k == src else k): v for k, v in dict(r).items()} for r in rows]
 
         # Current MRR: snapshot table (efficient single-table query)
         m = self.model
         measure = m.measures.mrr_original if use_original else m.measures.mrr
         q = measure + m.where("s.mrr_base_cents", ">", 0)
-        if spec:
-            q = q + m.apply_spec(spec)
+        q = q + await build_spec_fragment(m, spec, self.db)
         stmt, params = q.compile(m)
         result = await self.db.execute(stmt, params)
         rows = result.mappings().all()
-        if not spec or not spec.dimensions:
+        if not spec or (not spec.dimensions and not has_compare):
             return rows[0]["mrr"] if rows else 0
         return [dict(r) for r in rows]
 
@@ -346,8 +345,7 @@ class MrrMetric(Metric):
             + mm.filter("occurred_at", "between", (start, end))
             + mm.time_grain("occurred_at", interval)
         )
-        if spec:
-            q = q + mm.apply_spec(spec)
+        q = q + await build_spec_fragment(mm, spec, self.db)
 
         stmt, params = q.compile(mm)
         result = await self.db.execute(stmt, params)
@@ -396,8 +394,7 @@ class MrrMetric(Metric):
             + mm.filter("occurred_at", "between", (start, end))
             + mm.time_grain("occurred_at", interval)
         )
-        if spec:
-            q = q + mm.apply_spec(spec)
+        q = q + await build_spec_fragment(mm, spec, self.db)
 
         stmt, params = q.compile(mm)
         result = await self.db.execute(stmt, params)
@@ -444,8 +441,7 @@ class MrrMetric(Metric):
             + mm.dimension("movement_type")
             + mm.filter("occurred_at", "between", (start, end))
         )
-        if spec:
-            q = q + mm.apply_spec(spec)
+        q = q + await build_spec_fragment(mm, spec, self.db)
 
         stmt, params = q.compile(mm)
         result = await self.db.execute(stmt, params)

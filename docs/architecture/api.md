@@ -123,14 +123,23 @@ def parse_spec(
     dimensions: list[str] = Query(default=[]),
     filter: list[str] = Query(default=[]),    # "country=US", "plan_interval=monthly"
     granularity: str | None = None,
+    segment: str | None = Query(default=None),         # universe filter (segment id)
+    compare_segments: list[str] = Query(default=[]),    # per-branch slicing (segment ids)
 ) -> QuerySpec | None:
     filters = {}
     for f in filter:
         key, _, value = f.partition("=")
         filters[key] = value
-    if not dimensions and not filters and not granularity:
+    if not (dimensions or filters or granularity or segment or compare_segments):
         return None
-    return QuerySpec(dimensions=dimensions, filters=filters, granularity=granularity)
+    spec = QuerySpec(dimensions=dimensions, filters=filters, granularity=granularity)
+    # Segment IDs are resolved to SegmentDef objects later, in `query_metric`,
+    # so we don't need a DB session here.
+    if segment:
+        spec.filters["__segment_id__"] = segment
+    if compare_segments:
+        spec.filters["__compare_segment_ids__"] = list(compare_segments)
+    return spec
 
 @app.get("/api/metrics/mrr")
 async def get_mrr(
@@ -204,6 +213,39 @@ When `start` and `end` are provided, the endpoint returns a time series. Otherwi
 | `GET` | `/api/customers/{id}` | Customer detail with subscriptions |
 | `GET` | `/api/subscriptions` | Paginated subscription list |
 | `GET` | `/api/invoices` | Paginated invoice list |
+
+### Segments
+
+Every metric endpoint (`/api/metrics/{mrr,churn,retention,ltv,trials}` and their
+sub-paths) also accepts **`segment=<id>`** (universe filter) and
+**`compare_segments=<id1>&compare_segments=<id2>…`** (per-branch slicing, up to
+10). They compose — `segment` narrows the universe, `compare_segments` then
+splits the narrowed rows by tagging each with every branch it matches. See
+[segments.md](segments.md) for the compilation model.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/segments` | List all segments (workspace-shared) |
+| `POST` | `/api/segments` | Create a segment (JSON `SegmentDef` body) |
+| `GET`  | `/api/segments/{id}` | Fetch one |
+| `PUT`  | `/api/segments/{id}` | Update name / description / definition |
+| `DELETE` | `/api/segments/{id}` | Delete |
+| `POST` | `/api/segments/validate` | Lint a definition without persisting |
+| `GET`  | `/api/metrics/{name}/fields` | Discovery: dimensions + attributes + time_dimensions for the FE picker |
+
+### Attributes
+
+Customer attributes are keyed by `attribute_definition.key` and stored one-row-per-value in `customer_attribute`. Source may be `stripe` (fanned out from `customer.metadata`), `csv`, `api`, or `computed`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/attributes` | List attribute definitions |
+| `POST` | `/api/attributes` | Create a definition (explicit type pinning) |
+| `PUT`  | `/api/attributes/{key}` | Update label / description |
+| `GET`  | `/api/attributes/{key}/values` | Distinct observed values (autocomplete) |
+| `POST` | `/api/attributes/import` | Multipart CSV upload (first column is customer id) |
+| `POST` | `/api/customers/{id}/attributes` | Upsert values on one customer |
+| `DELETE` | `/api/customers/{id}/attributes/{key}` | Remove a value |
 
 ### Connectors
 

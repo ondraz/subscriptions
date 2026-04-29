@@ -18,7 +18,22 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 import sqlparse
-from sqlalchemy import Select, bindparam, func, literal_column, select, text
+from sqlalchemy import (
+    Select,
+    String,
+    and_,
+    bindparam,
+    func,
+    literal_column,
+    or_,
+    select,
+    text,
+    true,
+    values,
+)
+from sqlalchemy import (
+    column as sa_column,
+)
 from sqlalchemy import table as sa_table
 
 if TYPE_CHECKING:
@@ -157,16 +172,62 @@ class DimExpr:
 
 @dataclass(frozen=True)
 class FilterExpr:
+    """A single WHERE clause element, or a compound of clauses.
+
+    When ``kind == "simple"`` (default), ``column``/``op``/``value``/
+    ``param_name`` describe one predicate.  When ``kind`` is ``"and"`` or
+    ``"or"``, ``children`` is a non-empty tuple of sub-filters and the
+    scalar fields are unused.  This keeps the compilation path uniform —
+    see :func:`_filter_clause`.
+    """
+
     column: str
     op: str
     value: Any
     param_name: str
+    kind: str = "simple"
+    children: tuple[FilterExpr, ...] = ()
 
 
 @dataclass(frozen=True)
 class TimeGrainExpr:
     column: str
     granularity: str
+
+
+@dataclass(frozen=True)
+class DynamicJoinExpr:
+    """A join produced at query-compose time (not declared on the Cube).
+
+    The primary use is attribute-table joins produced by :meth:`Cube.attribute`.
+    Each filter against an attribute key declares a LEFT JOIN to
+    ``customer_attribute`` aliased by attribute key; the LEFT JOIN is essential
+    so ``is_empty``-style predicates see NULL for customers that have no row
+    for the key (rather than being filtered out by the join itself).
+
+    ``depends_on`` lists *static* join names (from the Cube's ``Joins`` class)
+    that must be present for the ``on`` clause to resolve — for example an
+    attribute join typically depends on the ``customer`` join because it
+    joins to ``c.id``.
+    """
+
+    alias: str
+    table: str
+    on: str
+    depends_on: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CompareBranch:
+    """One segment in a compare-mode query.
+
+    ``filter_fragment`` carries the filters (and any dynamic_joins introduced
+    by attribute conditions) for this branch.  Its measures/dimensions are
+    ignored — only filters contribute to the compound compare predicate.
+    """
+
+    segment_id: str
+    filter_fragment: QueryFragment
 
 
 # ── QueryFragment ────────────────────────────────────────────────────────
@@ -180,7 +241,14 @@ _OP_SUFFIX = {
     "<": "lt",
     "<=": "lte",
     "in": "in",
+    "not in": "nin",
     "between": "btwn",
+    "contains": "ct",
+    "not_contains": "nct",
+    "starts_with": "sw",
+    "ends_with": "ew",
+    "is_empty": "null",
+    "is_not_empty": "nnull",
 }
 
 
@@ -195,10 +263,23 @@ class QueryFragment:
     filters: tuple[FilterExpr, ...] = ()
     joins: frozenset[str] = frozenset()
     time_grain: TimeGrainExpr | None = None
+    # Joins produced at compose time (e.g. attribute EAV joins).  Deduped by
+    # alias across composition so two filters on the same attribute key share
+    # one join.
+    dynamic_joins: tuple[DynamicJoinExpr, ...] = ()
+    # Compare-mode branches.  When non-empty, compile() emits a CROSS JOIN on
+    # a VALUES set of segment IDs and a compound OR predicate that tags each
+    # row with the segments it satisfies.
+    compare: tuple[CompareBranch, ...] = ()
 
     def __add__(self, other: QueryFragment) -> QueryFragment:
         if not isinstance(other, QueryFragment):
             return NotImplemented
+        # Merge dynamic_joins by alias — two filters on the same attribute key
+        # share one EAV join rather than joining twice.
+        merged_dynamic: dict[str, DynamicJoinExpr] = {}
+        for dj in self.dynamic_joins + other.dynamic_joins:
+            merged_dynamic.setdefault(dj.alias, dj)
         return QueryFragment(
             source=self.source or other.source,
             alias=self.alias or other.alias,
@@ -207,6 +288,10 @@ class QueryFragment:
             filters=self.filters + other.filters,
             joins=self.joins | other.joins,
             time_grain=self.time_grain or other.time_grain,
+            dynamic_joins=tuple(merged_dynamic.values()),
+            # Compare mode is set by exactly one fragment in a composition —
+            # if both sides set it, later wins (caller's responsibility).
+            compare=self.compare or other.compare,
         )
 
     # ── Compilation ──────────────────────────────────────────────────
@@ -220,7 +305,13 @@ class QueryFragment:
         *model* is required when the fragment references joins.  It provides
         the join definitions needed to resolve table references.
         """
-        if self.joins and model is None:
+        # Static joins may come from compare branches too — union them in so
+        # _apply_joins sees every name we need.
+        needed_static: frozenset[str] = self.joins
+        for branch in self.compare:
+            needed_static = needed_static | branch.filter_fragment.joins
+
+        if needed_static and model is None:
             raise ValueError("Fragment references joins but no Cube was provided")
 
         source = self.source
@@ -231,11 +322,44 @@ class QueryFragment:
         stmt: Select[Any] = select().select_from(sa_table(source).alias(alias))
         params: dict[str, Any] = {}
 
-        # 1. Resolve and add joins in dependency order
-        if model and self.joins:
-            stmt = _apply_joins(stmt, self.joins, model)
+        # Dynamic joins (attribute EAV joins) — union across self + compare
+        # branches, deduped by alias.  Dynamic joins always LEFT JOIN so
+        # IS NULL / is_empty semantics remain correct for customers without
+        # a row for a given attribute key.
+        merged_dynamic: dict[str, DynamicJoinExpr] = {}
+        for dj in self.dynamic_joins:
+            merged_dynamic.setdefault(dj.alias, dj)
+        for branch in self.compare:
+            for dj in branch.filter_fragment.dynamic_joins:
+                merged_dynamic.setdefault(dj.alias, dj)
 
-        # 2. Time grain (before dimensions so period comes first in SELECT)
+        # Dynamic joins may depend on static joins (e.g. customer) — include
+        # them in the static resolution set so they're added transitively.
+        for dj in merged_dynamic.values():
+            needed_static = needed_static | frozenset(dj.depends_on)
+
+        # 1. Resolve and add static joins in dependency order
+        if model and needed_static:
+            stmt = _apply_joins(stmt, needed_static, model)
+
+        # 2. Dynamic joins (LEFT JOIN customer_attribute ca_X ON ...)
+        if merged_dynamic:
+            stmt = _apply_dynamic_joins(stmt, merged_dynamic.values())
+
+        # 3. Compare mode: CROSS JOIN a VALUES list of segment IDs and
+        #    prepend seg.segment_id to the GROUP BY / SELECT.
+        seg_col: Any = None
+        if self.compare:
+            seg_tbl = values(
+                sa_column("segment_id", String),
+                name="seg",
+            ).data([(b.segment_id,) for b in self.compare])
+            # CROSS JOIN is expressed as an inner join on true()
+            stmt = stmt.join(seg_tbl, true())
+            seg_col = seg_tbl.c.segment_id
+            stmt = stmt.add_columns(seg_col.label("segment_id")).group_by(seg_col)
+
+        # 4. Time grain (before dimensions so period comes first in SELECT)
         if self.time_grain:
             tg = self.time_grain
             trunc: Label[Any] = func.date_trunc(
@@ -244,21 +368,35 @@ class QueryFragment:
             ).label("period")
             stmt = stmt.add_columns(trunc).group_by(trunc)
 
-        # 3. Dimensions — SELECT + GROUP BY
+        # 5. Dimensions — SELECT + GROUP BY
         for d in self.dimensions:
             col_expr: ColumnClause[Any] = literal_column(d.column)
             stmt = stmt.add_columns(col_expr.label(d.label))
             stmt = stmt.group_by(col_expr)
 
-        # 4. Measures — aggregate expressions
+        # 6. Measures — aggregate expressions
         for m in self.measures:
             stmt = stmt.add_columns(_agg_expr(m))
 
-        # 5. Filters — WHERE clauses with bind params
+        # 7. Filters — WHERE clauses with bind params (non-compare filters
+        #    AND together; compare predicate is a compound OR-of-ANDs).
         for f in self.filters:
             clause, f_params = _filter_clause(f)
             stmt = stmt.where(clause)
             params.update(f_params)
+
+        # 8. Compare predicate: OR across branches, each branch tagged with
+        #    seg.segment_id = <branch_id> AND the branch's filters.
+        if self.compare and seg_col is not None:
+            branch_preds = []
+            for branch in self.compare:
+                leg_clauses: list[Any] = [seg_col == branch.segment_id]
+                for f in branch.filter_fragment.filters:
+                    clause, f_params = _filter_clause(f)
+                    leg_clauses.append(clause)
+                    params.update(f_params)
+                branch_preds.append(and_(*leg_clauses))
+            stmt = stmt.where(or_(*branch_preds))
 
         if logger.isEnabledFor(logging.DEBUG):
             log_sql(stmt, params)
@@ -372,6 +510,23 @@ def _apply_joins(
     return stmt
 
 
+def _apply_dynamic_joins(
+    stmt: Select[Any],
+    dynamic_joins: Any,
+) -> Select[Any]:
+    """Apply each ``DynamicJoinExpr`` as a LEFT JOIN.
+
+    LEFT JOIN is required so that ``is_empty`` / ``IS NULL`` predicates can
+    distinguish "no row for this attribute key" from "row exists with NULL
+    value": the dynamic alias's columns are NULL in the former case, which
+    is the semantically correct answer for an absent attribute.
+    """
+    for dj in sorted(dynamic_joins, key=lambda d: d.alias):
+        target = sa_table(dj.table).alias(dj.alias)
+        stmt = stmt.outerjoin(target, text(dj.on))
+    return stmt
+
+
 def _agg_expr(m: MeasureExpr) -> Label[Any]:
     """Build a SQLAlchemy aggregate expression from a MeasureExpr."""
     col: ColumnElement[Any] = literal_column("*") if m.column == "*" else literal_column(m.column)
@@ -389,8 +544,67 @@ def _agg_expr(m: MeasureExpr) -> Label[Any]:
             raise ValueError(f"Unknown aggregation: {other}")
 
 
+def _rename_params(f: FilterExpr, suffix: str) -> FilterExpr:
+    """Return a copy of *f* with every bind-param name suffixed.
+
+    Recurses into compound filters so nested AND/OR structures stay
+    self-consistent after the rename.  Used by :meth:`Cube.or_group` to
+    avoid collisions between legs that filter on the same column.
+    """
+    if f.kind in ("and", "or"):
+        return FilterExpr(
+            column="",
+            op="=",
+            value=None,
+            param_name="",
+            kind=f.kind,
+            children=tuple(_rename_params(c, suffix) for c in f.children),
+        )
+    if not f.param_name:
+        return f
+    return FilterExpr(
+        column=f.column,
+        op=f.op,
+        value=f.value,
+        param_name=f"{f.param_name}_{suffix}",
+        kind=f.kind,
+        children=f.children,
+    )
+
+
+_LIKE_ESCAPE_CHARS = ("\\", "%", "_")
+
+
+def _escape_like(value: Any) -> str:
+    r"""Escape LIKE/ILIKE wildcards in a user-supplied string.
+
+    Uses ``\\`` as the escape char (matched with ``ESCAPE '\\'`` in clauses).
+    """
+    s = str(value)
+    for ch in _LIKE_ESCAPE_CHARS:
+        s = s.replace(ch, f"\\{ch}")
+    return s
+
+
 def _filter_clause(f: FilterExpr) -> tuple[ColumnElement[Any], dict[str, Any]]:
-    """Build a WHERE clause element and bind params from a FilterExpr."""
+    """Build a WHERE clause element and bind params from a FilterExpr.
+
+    Supports simple predicates (``f.kind == "simple"``) and compound kinds
+    (``"and"``, ``"or"``) that recurse over ``f.children``.  All variants
+    produce bind-param-safe SQLAlchemy ``ColumnElement`` objects — no raw
+    ``text()`` SQL beyond what static Cube join declarations already use.
+    """
+    # Compound filters — recursively build clauses and combine.
+    if f.kind in ("and", "or"):
+        clauses: list[ColumnElement[Any]] = []
+        all_params: dict[str, Any] = {}
+        for child in f.children:
+            c, p = _filter_clause(child)
+            clauses.append(c)
+            all_params.update(p)
+        combinator = and_ if f.kind == "and" else or_
+        return combinator(*clauses), all_params
+
     col: ColumnClause[Any] = literal_column(f.column)
     params: dict[str, Any] = {}
 
@@ -419,6 +633,9 @@ def _filter_clause(f: FilterExpr) -> tuple[ColumnElement[Any], dict[str, Any]]:
         case "in":
             clause = col.in_(bindparam(f.param_name, expanding=True))
             params[f.param_name] = list(f.value)
+        case "not in":
+            clause = ~col.in_(bindparam(f.param_name, expanding=True))
+            params[f.param_name] = list(f.value)
         case "between":
             # Closed-closed: ``[start, end]`` inclusive on both ends.
             # Dates are coerced to day bounds so the last calendar day is
@@ -427,6 +644,22 @@ def _filter_clause(f: FilterExpr) -> tuple[ColumnElement[Any], dict[str, Any]]:
             clause = col.between(bindparam(sp), bindparam(ep))
             params[sp] = _day_start(f.value[0])
             params[ep] = _day_end(f.value[1])
+        case "contains":
+            clause = col.ilike(bindparam(f.param_name), escape="\\")
+            params[f.param_name] = f"%{_escape_like(f.value)}%"
+        case "not_contains":
+            clause = ~col.ilike(bindparam(f.param_name), escape="\\")
+            params[f.param_name] = f"%{_escape_like(f.value)}%"
+        case "starts_with":
+            clause = col.ilike(bindparam(f.param_name), escape="\\")
+            params[f.param_name] = f"{_escape_like(f.value)}%"
+        case "ends_with":
+            clause = col.ilike(bindparam(f.param_name), escape="\\")
+            params[f.param_name] = f"%{_escape_like(f.value)}"
+        case "is_empty":
+            clause = col.is_(None)
+        case "is_not_empty":
+            clause = col.is_not(None)
         case other:
             raise ValueError(f"Unknown filter operator: {other}")
 
@@ -518,6 +751,24 @@ class _CubeMeta(type):
         return cls
 
 
+_ATTRIBUTE_VALUE_COLUMNS = {
+    "string": "value_string",
+    "number": "value_number",
+    "boolean": "value_bool",
+    "timestamp": "value_timestamp",
+}
+
+
+def _safe_key(key: str) -> str:
+    """Sanitize an attribute key for use in a SQL alias / param name.
+
+    Replaces anything outside ``[a-zA-Z0-9_]`` with ``_`` — segment keys are
+    user-defined (CSV columns, Stripe metadata) so they can contain spaces,
+    hyphens, dots.
+    """
+    return "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in key)
+
+
 class Cube(metaclass=_CubeMeta):
     """Base class for semantic model declarations.
 
@@ -591,6 +842,127 @@ class Cube(metaclass=_CubeMeta):
             source=cls.__source__,
             alias=cls.__alias__,
             filters=(FilterExpr(column, op, value, param),),
+        )
+
+    @classmethod
+    def attribute(
+        cls,
+        key: str,
+        op: str,
+        value: Any,
+        *,
+        attr_type: str = "string",
+    ) -> QueryFragment:
+        """Return a fragment that filters on a customer attribute (EAV).
+
+        Adds a LEFT JOIN to ``customer_attribute`` aliased ``ca_<key>`` and a
+        WHERE clause against the typed value column (``value_string``,
+        ``value_number``, ``value_bool``, ``value_timestamp``).
+
+        The join is recorded as a :class:`DynamicJoinExpr` with
+        ``depends_on=("customer",)`` so the transitive customer join is
+        pulled in automatically.  The alias is deterministic — two filters
+        on the same key share one EAV join.
+
+        Args:
+            key: the attribute key (from ``attribute_definition.key``).
+            op: comparison operator (see :func:`_filter_clause` for the full
+                set — ``=``, ``!=``, ``<``, ``<=``, ``>``, ``>=``, ``in``,
+                ``not in``, ``between``, ``contains``, ``not_contains``,
+                ``starts_with``, ``ends_with``, ``is_empty``,
+                ``is_not_empty``).
+            value: the comparison value (ignored for ``is_empty`` /
+                ``is_not_empty``).
+            attr_type: one of ``"string"``, ``"number"``, ``"boolean"``,
+                ``"timestamp"``.  Determines which typed column the filter
+                targets.  Callers that know the declared type (usually from
+                ``attribute_definition``) should pass it; the default is
+                ``"string"``.
+        """
+        if attr_type not in _ATTRIBUTE_VALUE_COLUMNS:
+            raise ValueError(
+                f"Unknown attribute type {attr_type!r}; expected one of "
+                f"{sorted(_ATTRIBUTE_VALUE_COLUMNS)}"
+            )
+        value_col = _ATTRIBUTE_VALUE_COLUMNS[attr_type]
+        safe = _safe_key(key)
+        alias = f"ca_{safe}"
+        # Embed the attribute key as an ANSI SQL string literal (single quotes
+        # with embedded quotes doubled).  ON clauses in tidemill's Cube algebra
+        # are passed to ``text()`` rather than a parameterized expression, so
+        # we escape here — the key itself is a trusted identifier (ingested
+        # via Stripe/API/CSV), not user input at query time.
+        escaped_key = key.replace("'", "''")
+        on = (
+            f"{alias}.customer_id = c.id AND "
+            f"{alias}.source_id = c.source_id AND "
+            f"{alias}.key = '{escaped_key}'"
+        )
+        join = DynamicJoinExpr(
+            alias=alias,
+            table="customer_attribute",
+            on=on,
+            depends_on=("customer",),
+        )
+        param = f"attr_{safe}_{_OP_SUFFIX.get(op, 'op')}"
+        return QueryFragment(
+            source=cls.__source__,
+            alias=cls.__alias__,
+            filters=(FilterExpr(f"{alias}.{value_col}", op, value, param),),
+            dynamic_joins=(join,),
+        )
+
+    @classmethod
+    def or_group(cls, fragments: list[QueryFragment]) -> QueryFragment:
+        """Combine fragments with OR — each fragment becomes one OR leg.
+
+        Within a leg, the source fragment's filters are AND'd together
+        (that's the default fragment-composition semantics); legs are
+        combined with OR.  Static joins and dynamic joins from all legs are
+        merged into the returned fragment so the join graph is complete.
+
+        Param names in each leg's filters are suffixed with ``_orN`` to
+        avoid bind-param collisions when two legs filter on the same
+        column.
+        """
+        if not fragments:
+            return QueryFragment()
+        all_joins: frozenset[str] = frozenset()
+        merged_dyn: dict[str, DynamicJoinExpr] = {}
+        legs: list[FilterExpr] = []
+        source = None
+        alias = None
+
+        for i, fr in enumerate(fragments):
+            source = source or fr.source
+            alias = alias or fr.alias
+            all_joins = all_joins | fr.joins
+            for dj in fr.dynamic_joins:
+                merged_dyn.setdefault(dj.alias, dj)
+            renamed = tuple(_rename_params(f, f"or{i}") for f in fr.filters)
+            if len(renamed) == 0:
+                continue
+            if len(renamed) == 1:
+                legs.append(renamed[0])
+            else:
+                # Multiple filters in one leg → AND them together.
+                legs.append(FilterExpr("", "=", None, "", kind="and", children=renamed))
+
+        if not legs:
+            return QueryFragment(
+                source=source or cls.__source__,
+                alias=alias or cls.__alias__,
+                joins=all_joins,
+                dynamic_joins=tuple(merged_dyn.values()),
+            )
+
+        compound = FilterExpr("", "=", None, "", kind="or", children=tuple(legs))
+        return QueryFragment(
+            source=source or cls.__source__,
+            alias=alias or cls.__alias__,
+            filters=(compound,),
+            joins=all_joins,
+            dynamic_joins=tuple(merged_dyn.values()),
         )
 
     @classmethod

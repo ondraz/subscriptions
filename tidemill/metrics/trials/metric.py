@@ -22,6 +22,7 @@ from sqlalchemy import text
 from tidemill.metrics.base import Metric, QuerySpec
 from tidemill.metrics.registry import register
 from tidemill.metrics.trials.cubes import TrialCube
+from tidemill.segments.compiler import build_spec_fragment
 
 if TYPE_CHECKING:
     from datetime import date
@@ -169,15 +170,23 @@ class TrialsMetric(Metric):
         start: date,
         end: date,
         spec: QuerySpec | None,
-    ) -> float | None:
+    ) -> Any:
         """Cohort trial conversion rate.
 
         Denominator is trials **started** in ``[start, end]`` (closed-closed —
         both endpoints inclusive, see ``docs/definitions.md``). Numerator is
         how many of those later converted (at any time — may be after
         ``end``). Returns None when no trials started in the range.
+
+        With ``spec.compare`` set, returns a list of
+        ``{segment_id, conversion_rate}`` dicts.
         """
         data = await self._funnel(start, end, spec)
+        if isinstance(data, list):
+            return [
+                {"segment_id": e["segment_id"], "conversion_rate": e["conversion_rate"]}
+                for e in data
+            ]
         return data["conversion_rate"]
 
     async def _funnel(
@@ -185,8 +194,13 @@ class TrialsMetric(Metric):
         start: date,
         end: date,
         spec: QuerySpec | None,
-    ) -> dict[str, Any]:
-        """Cohort trial funnel: started, converted, expired counts."""
+    ) -> Any:
+        """Cohort trial funnel: started, converted, expired counts.
+
+        With ``spec.compare`` set, returns ``[{segment_id, started, converted,
+        expired, conversion_rate}, ...]`` so per-segment rates are based on
+        per-segment denominators.
+        """
         m = self.model
 
         q = (
@@ -195,12 +209,42 @@ class TrialsMetric(Metric):
             + m.measures.expired_count
             + m.filter("started_at", "between", (start, end))
         )
-        if spec:
-            q = q + m.apply_spec(spec)
+        q = q + await build_spec_fragment(m, spec, self.db)
 
         stmt, params = q.compile(m)
-        row = (await self.db.execute(stmt, params)).mappings().first()
+        rows = (await self.db.execute(stmt, params)).mappings().all()
 
+        if spec and spec.compare:
+            by_seg = {r["segment_id"]: r for r in rows}
+            out = []
+            for seg_id, _ in spec.compare:
+                r = by_seg.get(seg_id)
+                if r is None:
+                    out.append(
+                        {
+                            "segment_id": seg_id,
+                            "started": 0,
+                            "converted": 0,
+                            "expired": 0,
+                            "conversion_rate": None,
+                        }
+                    )
+                    continue
+                started = r["started"]
+                converted = r["converted"]
+                expired = r["expired"]
+                out.append(
+                    {
+                        "segment_id": seg_id,
+                        "started": started,
+                        "converted": converted,
+                        "expired": expired,
+                        "conversion_rate": converted / started if started else None,
+                    }
+                )
+            return out
+
+        row = rows[0] if rows else None
         started = row["started"] if row else 0
         converted = row["converted"] if row else 0
         expired = row["expired"] if row else 0
@@ -233,8 +277,7 @@ class TrialsMetric(Metric):
             + m.filter("started_at", "between", (start, end))
             + m.time_grain("started_at", interval)
         )
-        if spec:
-            q = q + m.apply_spec(spec)
+        q = q + await build_spec_fragment(m, spec, self.db)
 
         stmt, params = q.compile(m)
         result = await self.db.execute(stmt, params)

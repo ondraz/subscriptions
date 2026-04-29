@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from tidemill.metrics.base import Metric
+    from tidemill.metrics.query import Cube
 
 _REGISTRY: dict[str, type[Metric]] = {}
 
@@ -23,6 +24,25 @@ def register(cls: type[Metric]) -> type[Metric]:
 def discover_metrics() -> list[Metric]:
     """Instantiate all registered metrics (uninitialized)."""
     return [cls() for cls in _REGISTRY.values()]
+
+
+def registered_names() -> list[str]:
+    """Return the names of every registered metric, sorted."""
+    return sorted(_REGISTRY)
+
+
+def metric_primary_cube(name: str) -> type[Cube] | None:
+    """Resolve *name* to its metric's :attr:`Metric.primary_cube`.
+
+    Returns ``None`` for unknown metrics.  Used by generic routers (the
+    ``/fields`` discovery endpoint, segment validation) so they stay
+    plugin-agnostic — each metric advertises its own filter surface via
+    the base-class contract rather than the router hard-coding a lookup.
+    """
+    cls = _REGISTRY.get(name)
+    if cls is None:
+        return None
+    return cls().primary_cube
 
 
 def resolve_dependencies(metrics: list[Metric]) -> list[Metric]:

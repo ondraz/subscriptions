@@ -10,6 +10,7 @@ from sqlalchemy import text
 from tidemill.metrics.base import Metric, QuerySpec
 from tidemill.metrics.ltv.cubes import LtvInvoiceCube
 from tidemill.metrics.registry import register
+from tidemill.segments.compiler import build_spec_fragment
 
 if TYPE_CHECKING:
     from datetime import date
@@ -86,7 +87,7 @@ class LtvMetric(Metric):
         self,
         at: date | None,
         spec: QuerySpec | None,
-    ) -> float | None:
+    ) -> Any:
         """Average Revenue Per User = total active MRR / distinct active customers.
 
         When ``at`` is provided, the calculation is historical: the active
@@ -94,6 +95,8 @@ class LtvMetric(Metric):
         sum to a positive value, matching the ``[month-start, next-month-start)``
         cohort semantics used by MRR.  When ``at`` is ``None``, the snapshot
         table is used for an efficient current-state read.
+
+        With ``spec.compare`` set, returns ``[{segment_id, arpu}, ...]``.
         """
         if at is not None:
             return await self._historical_arpu(at, spec)
@@ -102,12 +105,27 @@ class LtvMetric(Metric):
 
         sm = MRRSnapshotCube
         q = sm.measures.mrr + sm.measures.customer_count + sm.where("s.mrr_base_cents", ">", 0)
-        if spec:
-            q = q + sm.apply_spec(spec)
+        q = q + await build_spec_fragment(sm, spec, self.db)
 
         stmt, params = q.compile(sm)
         result = await self.db.execute(stmt, params)
-        row = result.mappings().first()
+        rows = result.mappings().all()
+
+        if spec and spec.compare:
+            by_seg = {r["segment_id"]: r for r in rows}
+            return [
+                {
+                    "segment_id": seg_id,
+                    "arpu": (
+                        float(by_seg[seg_id]["mrr"] / by_seg[seg_id]["customer_count"])
+                        if seg_id in by_seg and by_seg[seg_id]["customer_count"]
+                        else None
+                    ),
+                }
+                for seg_id, _ in spec.compare
+            ]
+
+        row = rows[0] if rows else None
         if not row or not row["customer_count"]:
             return None
         return float(row["mrr"] / row["customer_count"])
@@ -116,7 +134,7 @@ class LtvMetric(Metric):
         self,
         at: date,
         spec: QuerySpec | None,
-    ) -> float | None:
+    ) -> Any:
         from tidemill.metrics.mrr.cubes import MRRMovementCube
 
         # ``at`` is an inclusive end-of-day snapshot boundary (closed-closed
@@ -124,12 +142,32 @@ class LtvMetric(Metric):
         # the bare ``date`` to 23:59:59.999999 for the comparison.
         mm = MRRMovementCube
         q = mm.measures.amount + mm.dimension("customer_id") + mm.filter("occurred_at", "<=", at)
-        if spec:
-            q = q + mm.apply_spec(spec)
+        q = q + await build_spec_fragment(mm, spec, self.db)
 
         stmt, params = q.compile(mm)
         result = await self.db.execute(stmt, params)
         rows = result.mappings().all()
+
+        if spec and spec.compare:
+            # Group by segment — customer_id is a dim so each row is one
+            # (segment_id, customer_id) pair.  ARPU per segment = sum MRR
+            # among active / count of active.
+            buckets: dict[str, list[float]] = {}
+            for r in rows:
+                amt = float(r.get("amount_base") or 0)
+                if amt > 0:
+                    buckets.setdefault(r["segment_id"], []).append(amt)
+            return [
+                {
+                    "segment_id": seg_id,
+                    "arpu": (
+                        float(sum(buckets[seg_id]) / len(buckets[seg_id]))
+                        if seg_id in buckets
+                        else None
+                    ),
+                }
+                for seg_id, _ in spec.compare
+            ]
 
         active = [r for r in rows if (r.get("amount_base") or 0) > 0]
         if not active:
@@ -143,7 +181,7 @@ class LtvMetric(Metric):
         start: date,
         end: date,
         spec: QuerySpec | None,
-    ) -> float | None:
+    ) -> Any:
         """Simple LTV = ARPU / average monthly logo churn rate.
 
         Monthly churn is computed per month in ``[start, end]`` and then
@@ -151,6 +189,10 @@ class LtvMetric(Metric):
         period-wide churn rate would understate LTV when the data doesn't
         predate ``start`` — the first month has no ``active_at_start``
         customers, so the period denominator collapses to 0.
+
+        With ``spec.compare`` set, returns ``[{segment_id, ltv}, ...]`` —
+        the per-segment ARPU and per-segment monthly churn come from the
+        same compare payload, so the numerator and denominator line up.
         """
         from tidemill.metrics.retention.metric import _month_range, _to_month
 
@@ -158,7 +200,46 @@ class LtvMetric(Metric):
         if arpu is None:
             return None
 
+        has_compare = bool(spec and spec.compare)
         months = _month_range(_to_month(start), _to_month(end))
+
+        if has_compare and spec is not None and spec.compare:
+            rates_by_seg: dict[str, list[float]] = {}
+            for i, m_start in enumerate(months):
+                if i + 1 < len(months):
+                    m_end = months[i + 1]
+                else:
+                    y, mo = (
+                        (m_start.year + 1, 1)
+                        if m_start.month == 12
+                        else (m_start.year, m_start.month + 1)
+                    )
+                    m_end = type(m_start)(y, mo, 1)
+                r = await self.deps["churn"].query(
+                    {"start": m_start, "end": m_end, "type": "logo"},
+                    spec,
+                )
+                if isinstance(r, list):
+                    for entry in r:
+                        rate = entry.get("logo_churn_rate")
+                        if rate is not None:
+                            rates_by_seg.setdefault(entry["segment_id"], []).append(float(rate))
+
+            arpu_by_seg = (
+                {row["segment_id"]: row["arpu"] for row in arpu} if isinstance(arpu, list) else {}
+            )
+            out = []
+            for seg_id, _ in spec.compare:
+                a = arpu_by_seg.get(seg_id)
+                rates = rates_by_seg.get(seg_id, [])
+                if a is None or not rates:
+                    out.append({"segment_id": seg_id, "ltv": None})
+                    continue
+                avg_churn = sum(rates) / len(rates)
+                ltv = float(a / avg_churn) if avg_churn > 0 else None
+                out.append({"segment_id": seg_id, "ltv": ltv})
+            return out
+
         rates: list[float] = []
         for i, m_start in enumerate(months):
             if i + 1 < len(months):
@@ -174,7 +255,7 @@ class LtvMetric(Metric):
                 {"start": m_start, "end": m_end, "type": "logo"},
                 spec,
             )
-            if r is not None:
+            if r is not None and isinstance(r, (int, float)):
                 rates.append(float(r))
 
         if not rates:
@@ -183,7 +264,9 @@ class LtvMetric(Metric):
         if monthly_churn == 0:
             return None
 
-        return float(arpu / monthly_churn)
+        # arpu can legitimately still be a scalar here (non-compare path)
+        arpu_val = float(arpu) if isinstance(arpu, (int, float)) else 0.0
+        return float(arpu_val / monthly_churn)
 
     async def _cohort_ltv(
         self,
@@ -208,9 +291,13 @@ class LtvMetric(Metric):
         ``MRR > 0``).
         """
         from tidemill.metrics.mrr.cubes import MRRMovementCube
-        from tidemill.metrics.retention.metric import _month_range, _to_month
+        from tidemill.metrics.retention.metric import _filter_only, _month_range, _to_month
 
         mm = MRRMovementCube
+        # Cohort LTV with compare would mean a 3-D result (cohort × segment
+        # × metrics) that the chart can't consume today — fall back to
+        # segment-as-filter so the cohort axis stays 2-D.
+        narrowed = _filter_only(spec)
 
         nq = (
             mm.dimension("customer_id")
@@ -218,8 +305,7 @@ class LtvMetric(Metric):
             + mm.filter("movement_type", "=", "new")
             + mm.time_grain("occurred_at", "month")
         )
-        if spec:
-            nq = nq + mm.apply_spec(spec)
+        nq = nq + await build_spec_fragment(mm, narrowed, self.db)
         nstmt, nparams = nq.compile(mm)
         nrows = (await self.db.execute(nstmt, nparams)).mappings().all()
 
@@ -240,8 +326,7 @@ class LtvMetric(Metric):
         # docstring). The display window only selects which cohorts render.
         m = self.model
         iq = m.measures.total_revenue + m.dimension("customer_id")
-        if spec:
-            iq = iq + m.apply_spec(spec)
+        iq = iq + await build_spec_fragment(m, narrowed, self.db)
         istmt, iparams = iq.compile(m)
         irows = (await self.db.execute(istmt, iparams)).mappings().all()
 

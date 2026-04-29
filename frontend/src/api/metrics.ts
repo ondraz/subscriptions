@@ -10,6 +10,10 @@ export interface MetricParams {
   filters?: Record<string, string>
   type?: string
   query_type?: string
+  // Universe filter (single segment id).
+  segment?: string
+  // Compare mode (up to 10 segment ids → per-branch rows in the response).
+  compare_segments?: string[]
 }
 
 function buildQuery(params: MetricParams): string {
@@ -20,7 +24,9 @@ function buildQuery(params: MetricParams): string {
   if (params.interval) sp.set('interval', params.interval)
   if (params.type) sp.set('type', params.type)
   if (params.query_type) sp.set('query_type', params.query_type)
+  if (params.segment) sp.set('segment', params.segment)
   params.dimensions?.forEach((d) => sp.append('dimensions', d))
+  params.compare_segments?.forEach((s) => sp.append('compare_segments', s))
   if (params.filters) {
     for (const [k, v] of Object.entries(params.filters)) {
       sp.append('filter', `${k}:${v}`)

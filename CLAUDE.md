@@ -67,9 +67,9 @@ Each metric (MRR, Churn, Retention) is a self-contained class (`Metric` subclass
 
 **P0:** MRR, Churn (logo + revenue + net revenue), Basic cohort retention, Stripe integration, CLI, FastAPI, Docker deployment (PostgreSQL + Kafka + API + Worker), Documented metric methodology
 
-**P1 (implemented):** LTV, Trials
+**P1 (implemented):** LTV, Trials, Customer segmentation (saved segments + EAV attributes + compare mode), Web dashboard
 
-**P1 (remaining):** Lago integration, Kill Bill integration, CAC, Customer segmentation, Web dashboard, Data warehouse export
+**P1 (remaining):** Lago integration, Kill Bill integration, CAC, Data warehouse export
 
 **Non-goals for V1:** Payment processing, revenue recovery, board-ready reporting, CRM, general-purpose BI
 
@@ -80,6 +80,7 @@ Start with `docs/architecture/overview.md` for the full system design. Key files
 - **Connectors:** `connectors.md` — `WebhookConnector` (Stripe) vs `DatabaseConnector` (Lago/Kill Bill) patterns
 - **Metrics:** `metrics.md` — `Metric` base class, built-in metrics (MRR, Churn, Retention, LTV, Trials) with SQL
 - **Query Algebra:** `cubes.md` — Cubes, `QueryFragment` composition, declarative SQL building
+- **Segmentation:** `segments.md` — customer attribute EAV, segment DSL, compare-mode compilation
 - **Database:** `database.md` — Core schema (ER diagram), metric tables, deployment topologies
 - **API:** `api.md` — CLI commands, FastAPI endpoints, programmatic Python usage
 - **Research:** `docs/research/` — Market analysis, competitive matrix, product positioning
@@ -102,15 +103,23 @@ tidemill/
 │   ├── lago.py              # Lago database connector (P1)
 │   └── killbill.py          # Kill Bill database connector (P1)
 ├── metrics/
-│   ├── base.py              # Metric ABC + QuerySpec
+│   ├── base.py              # Metric ABC + QuerySpec (segment + compare)
 │   ├── registry.py          # @register decorator, discovery, dependency resolution
-│   ├── query.py             # Cube, QueryFragment, compilation
-│   ├── route_helpers.py     # Shared FastAPI helpers
+│   ├── query.py             # Cube, QueryFragment (+ dynamic_joins + compare), compilation
+│   ├── route_helpers.py     # Shared FastAPI helpers (resolves segment IDs to SegmentDefs)
 │   ├── mrr/                 # MRR, ARR, net new MRR, waterfall
 │   ├── churn/               # Logo churn, revenue churn
 │   ├── retention/           # Cohort retention, NRR, GRR
 │   ├── ltv/                 # LTV, ARPU, cohort LTV
 │   └── trials/              # Trial conversion rate, funnel
+├── segments/                # Customer segmentation DSL + compiler
+│   ├── model.py             # SegmentDef, Condition, Group, Segment.to_fragment, Compare
+│   ├── compiler.py          # build_spec_fragment — QuerySpec → QueryFragment
+│   └── routes.py            # /api/segments CRUD + /validate
+├── attributes/              # Customer-attribute EAV
+│   ├── ingest.py            # Stripe metadata fan-out, type inference, upserts
+│   ├── registry.py          # attribute_definition reads, distinct values
+│   └── routes.py            # /api/attributes + /api/customers/{id}/attributes
 ├── cli/
 │   └── main.py              # CLI entry point
 ├── api/

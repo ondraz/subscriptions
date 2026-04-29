@@ -189,15 +189,29 @@ model.where("s.mrr_base_cents", ">", 0)
 `compile()` turns a composed `QueryFragment` into a SQLAlchemy `Select` statement and a bind-params dict. The compilation pipeline:
 
 1. **FROM** — `SELECT ... FROM {source} AS {alias}`
-2. **Resolve joins** — collect all join names from the fragment, topologically sort by `depends_on`, emit `JOIN` clauses. Deduplication is automatic (joins are a `frozenset`).
-3. **Add time grain** — `DATE_TRUNC(granularity, column) AS period` in SELECT and GROUP BY (first so `period` leads the projection).
-4. **Add dimensions** — column expressions in SELECT and GROUP BY.
-5. **Add measures** — aggregation expressions in SELECT (`SUM(...)`, `COUNT(DISTINCT ...)`, `COUNT(...)`, `AVG(...)`).
-6. **Add filters** — WHERE clauses with bound parameters.
+2. **Resolve static joins** — collect all join names (self + compare branches), topologically sort by `depends_on`, emit `JOIN` clauses. Deduplication is automatic (joins are a `frozenset`).
+3. **Apply dynamic joins** — emit one `LEFT JOIN` per unique `DynamicJoinExpr` alias. Used by `Cube.attribute()` to reach EAV attribute tables without declaring every attribute up-front. Always LEFT so `is_empty` / `IS NULL` semantics stay correct.
+4. **Compare mode** — if `fragment.compare` is non-empty, add `CROSS JOIN (VALUES ('seg_a'), ('seg_b')) AS seg(segment_id)` and prepend `seg.segment_id` to SELECT and GROUP BY.
+5. **Add time grain** — `DATE_TRUNC(granularity, column) AS period` in SELECT and GROUP BY (so `period` leads the projection).
+6. **Add dimensions** — column expressions in SELECT and GROUP BY.
+7. **Add measures** — aggregation expressions in SELECT (`SUM(...)`, `COUNT(DISTINCT ...)`, `COUNT(...)`, `AVG(...)`).
+8. **Add filters** — WHERE clauses with bound parameters. Non-compare filters AND together; when compare is set, an additional compound OR-of-ANDs is AND'd in (each branch tagged with `seg.segment_id = :branch_id`).
 
 There is no ORDER BY in the algebra — ordering is handled by the caller or by post-processing in the metric. Also note: aggregates are emitted as raw `SUM(col)` / `COUNT(DISTINCT col)` — no unit conversion happens in the compiler (cents-to-dollars is the caller's responsibility).
 
 A `to_sql(model)` helper compiles the statement against the PostgreSQL dialect and inline-substitutes bind parameters, which is useful for notebooks and SQL logging.
+
+### Dynamic joins + attribute()
+
+`Cube.attribute(key, op, value, attr_type="string")` produces a `QueryFragment` that adds a `DynamicJoinExpr(alias="ca_{key}", table="customer_attribute", depends_on=("customer",))` and a filter against the matching `value_*` column (`value_string`, `value_number`, `value_bool`, `value_timestamp`). Two filters on the same key share one join — aliases are deduped by `alias` in `__add__` and again at compile time. See [segments.md](segments.md) for the full attribute EAV model.
+
+### OR groups via Cube.or_group()
+
+`Cube.or_group([frag_a, frag_b, …])` combines fragments with OR — each leg's filters AND together internally, legs are OR'd at the top. Implemented as a `FilterExpr(kind="or", children=(...))` variant that `_filter_clause` handles uniformly with simple filters — no new compilation path.
+
+### Operator set
+
+`FilterExpr` supports: `= != > >= < <= in not in between contains not_contains starts_with ends_with is_empty is_not_empty`. All map cleanly to SQLAlchemy Core — `ILIKE` for the string ops (with `%` / `_` / `\\` escaped in the bound value), `IS NULL` / `IS NOT NULL` for the empty ops (no bind param emitted). No raw `text()` beyond what static join declarations already use.
 
 ## Concrete Cubes
 
@@ -246,12 +260,22 @@ class MRRSnapshotCube(Cube):
         # Subscription attributes
         collection_method = Dim("sub.collection_method", join="subscription")
         cancel_at_period_end = Dim("sub.cancel_at_period_end", join="subscription")
+        # Computed — CASE / DATE_TRUNC expressions on c.created_at and the
+        # MRR column.  Surfaced through the same /fields endpoint as regular
+        # dims; segment definitions reach them via the `computed.<name>`
+        # field prefix (or bare name for backwards compatibility).
+        mrr_band       = Dim(_mrr_band_sql("s.mrr_base_cents"), join="customer", label="MRR band")
+        arr_band       = Dim(_arr_band_sql("s.mrr_base_cents"), join="customer", label="ARR band")
+        tenure_months  = Dim(_TENURE_MONTHS_SQL,                join="customer", label="Tenure (months)")
+        cohort_month   = Dim(_COHORT_MONTH_SQL,                 join="customer", label="Cohort month")
 
     class TimeDimensions:
         snapshot_at = TimeDim("s.snapshot_at")
 ```
 
 The `customer_count` measure exists so LTV/ARPU queries can compute `SUM(mrr) / COUNT(DISTINCT customer_id)` in a single trip to the DB.
+
+**Computed dimensions** (`mrr_band`, `arr_band`, `tenure_months`, `cohort_month`) are SQL expressions stored verbatim in `Dim.column`. `literal_column` accepts arbitrary expressions, so `dimension("mrr_band")` and `filter("mrr_band", "=", "$100-$500")` work the same as any column-backed dim. The expressions live in `tidemill/metrics/mrr/cubes.py` (`_mrr_band_sql`, `_arr_band_sql`, `_TENURE_MONTHS_SQL`, `_COHORT_MONTH_SQL`) and are reused across the Churn, LTV, Retention, and Trials cubes wherever a `customer` join is available. See [Segmentation](segments.md) for how segment definitions reach them.
 
 ### MRR Movement Cube
 
@@ -567,15 +591,16 @@ class MrrMetric(Metric):
         if at:
             q = q + m.filter("snapshot_at", "<=", at)
 
-        # Apply user-requested dimensions and filters from spec
-        if spec:
-            q = q + m.apply_spec(spec)
+        # Dimensions + filters + segment + compare from the spec, in one
+        # bridge call (see tidemill/segments/compiler.py).
+        q = q + await build_spec_fragment(m, spec, self.db)
 
         stmt, params = q.compile(m)
         result = await self.db.execute(stmt, params)
         rows = result.mappings().all()
 
-        if not spec or not spec.dimensions:
+        has_compare = bool(spec and spec.compare)
+        if not spec or (not spec.dimensions and not has_compare):
             return rows[0]["mrr"] if rows else 0
         return [dict(r) for r in rows]
 
@@ -588,8 +613,7 @@ class MrrMetric(Metric):
             + mm.filter("occurred_at", "between", (start, end))
         )
 
-        if spec:
-            q = q + mm.apply_spec(spec)
+        q = q + await build_spec_fragment(mm, spec, self.db)
 
         stmt, params = q.compile(mm)
         result = await self.db.execute(stmt, params)
@@ -630,8 +654,7 @@ class QuickRatioMetric(Metric):
             + m.filter("occurred_at", "between", (params["start"], params["end"]))
         )
 
-        if spec:
-            q = q + m.apply_spec(spec)
+        q = q + await build_spec_fragment(m, spec, self.db)
 
         stmt, bind = q.compile(m)
         rows = (await self.db.execute(stmt, bind)).mappings().all()
@@ -662,7 +685,7 @@ class QuerySpec:
     time_range: tuple[str, str] | None = None
 ```
 
-The model's `apply_spec()` method translates a `QuerySpec` into a composed fragment. Validation happens inside `Cube.dimension()`, `Cube.filter()`, and `Cube.time_grain()` — each raises `ValueError` with the list of available names when given an unknown one.
+The model's `apply_spec()` method translates the `dimensions` / `filters` / `granularity` fields of a `QuerySpec` into a composed fragment. Validation happens inside `Cube.dimension()`, `Cube.filter()`, and `Cube.time_grain()` — each raises `ValueError` with the list of available names when given an unknown one.
 
 ```python
 @classmethod
@@ -690,6 +713,8 @@ def apply_spec(cls, spec: QuerySpec | None) -> QueryFragment:
 
     return result
 ```
+
+`apply_spec` only handles the dim / filter / granularity layer. **Metric query methods should call `await build_spec_fragment(cube, spec, db)`** (in `tidemill.segments.compiler`) — that helper layers `apply_spec` plus the `segment` (universe filter) and `compare` (per-branch CROSS JOIN) carried by the spec, looking up attribute types from the registry as needed. Calling `apply_spec` directly skips segments and compare-mode entirely.
 
 ## API Integration
 
@@ -840,18 +865,29 @@ The cube machinery lives in `tidemill/metrics/query.py` — the same file that m
 ```
 tidemill/metrics/
 ├── __init__.py          # re-exports Metric, QuerySpec, register, ...
-├── base.py              # Metric ABC + QuerySpec
-├── query.py             # Cube, QueryFragment, compilation
-├── registry.py          # @register decorator, discovery, dependency resolution
-├── route_helpers.py     # Shared FastAPI helpers (parse_spec, query_metric)
-├── mrr/                 # MRRSnapshotCube, MRRMovementCube, MrrMetric, routes
-├── churn/               # ChurnCustomerStateCube, ChurnEventCube, ChurnMetric, routes
-├── retention/           # RetentionCohortCube, RetentionMetric, routes
-├── ltv/                 # LtvInvoiceCube, LtvMetric, routes
-└── trials/              # TrialCube, TrialsMetric, routes
+├── base.py              # Metric ABC + QuerySpec (includes `segment`, `compare`)
+├── query.py             # Cube, QueryFragment (incl. dynamic_joins + compare), compilation
+├── registry.py          # @register, discovery, dependency resolution, primary_cube lookup
+├── route_helpers.py     # parse_spec (now also reads ?segment / ?compare_segments),
+│                          query_metric (resolves segment IDs → SegmentDefs)
+├── mrr/                 # MRRSnapshotCube, MRRMovementCube + computed dims
+├── churn/               # ChurnCustomerStateCube, ChurnEventCube
+├── retention/           # RetentionCohortCube
+├── ltv/                 # LtvInvoiceCube
+└── trials/              # TrialCube
+
+tidemill/segments/
+├── model.py             # SegmentDef AST (Group, Condition), Segment.to_fragment, Compare
+├── compiler.py          # build_spec_fragment — bridges QuerySpec (incl. segment/compare) → Cube
+└── routes.py            # /api/segments CRUD + /validate
+
+tidemill/attributes/
+├── ingest.py            # Stripe metadata fan-out, type inference, upsert helpers
+├── registry.py          # attribute_definition reads, distinct values for autocomplete
+└── routes.py            # /api/attributes + /api/customers/{id}/attributes
 ```
 
-Each metric subpackage contains `cubes.py`, `metric.py`, `routes.py`, `tables.py`, and `__init__.py`.
+Each metric subpackage contains `cubes.py`, `metric.py`, `routes.py`, `tables.py`, and `__init__.py`. Metrics call `await build_spec_fragment(cube, spec, db)` in their `query()` methods to apply the full `QuerySpec` (dim / filter / granularity / segment / compare) in one shot.
 
 ### SQLAlchemy Integration
 
@@ -873,3 +909,24 @@ class Dimensions:
 ```
 
 No changes to compilation, API, or other metrics needed.
+
+### Adding a Computed Dimension
+
+A *computed* dimension is a SQL expression rather than a single column reference. The compiler treats it the same as a column-backed dim — `literal_column` accepts arbitrary expressions, so `dimension(...)`, `filter(...)`, and the `computed.<name>` segment field path all work without changes.
+
+```python
+# Example: bucket customers by tenure
+_TENURE_BUCKET_SQL = (
+    "CASE"
+    " WHEN AGE(NOW(), c.created_at) < INTERVAL '30 days' THEN '<30d'"
+    " WHEN AGE(NOW(), c.created_at) < INTERVAL '180 days' THEN '30d-6mo'"
+    " ELSE '>6mo'"
+    " END"
+)
+
+class Dimensions:
+    ...
+    tenure_bucket = Dim(_TENURE_BUCKET_SQL, join="customer", label="Tenure bucket")
+```
+
+The `/api/metrics/{name}/fields` endpoint surfaces computed dims alongside column-backed ones — the FE picker treats them identically. The `_infer_dim_type` helper in `tidemill/api/routers/metrics.py` reads `::date`, `::int`, `CASE WHEN`, etc. from the expression to pick a sensible widget type (date / number / string).

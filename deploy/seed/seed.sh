@@ -20,7 +20,7 @@ COMPOSE_DIR="$ROOT/deploy/compose"
 COMPOSE="docker compose -f $COMPOSE_DIR/docker-compose.yml -f $COMPOSE_DIR/docker-compose.observability.yml -f $COMPOSE_DIR/docker-compose.local.yml"
 API="http://localhost:8000"
 SEED_CUSTOMERS="${SEED_CUSTOMERS:-19}"
-SEED_MONTHS="${SEED_MONTHS:-8}"
+SEED_MONTHS="${SEED_MONTHS:-18}"
 
 full_cleanup() {
     echo ""
@@ -100,6 +100,40 @@ uv run python "$ROOT/deploy/seed/stripe_seed.py" \
 echo ""
 echo "=== Waiting for webhook processing (30s) ==="
 sleep 30
+
+echo ""
+echo "=== Importing external customer attributes (CSV) ==="
+# Adds account_manager / region / industry / is_strategic to the 19
+# archetype customers via POST /api/attributes/import.  Matched by email
+# since seed customer emails are deterministic (seed-N@test.example.com).
+# These attributes power the example segments created below — anything
+# that's not in Stripe metadata still lands in the segment builder.
+ATTRS_CSV="$ROOT/deploy/seed/customer_attributes.csv"
+if [[ -f "$ATTRS_CSV" ]]; then
+    import_result=$(curl -sf -X POST "$API/api/attributes/import" \
+        -F "file=@$ATTRS_CSV" \
+        -F "id_column=email" \
+        -F "id_kind=email" || echo "CURL_FAILED")
+    echo "Import: $import_result"
+else
+    echo "WARN: $ATTRS_CSV missing — skipping attribute import"
+fi
+
+echo ""
+echo "=== Creating example segments ==="
+# Two starter segments so a fresh stack has something for the SegmentPicker
+# to bind to.  Use the /api/segments endpoint directly — these are
+# workspace-shared so no auth scoping is needed when AUTH_ENABLED=false.
+strategic_def='{"version":1,"root":{"op":"and","conditions":[{"field":"attr.is_strategic","op":"=","value":true}]}}'
+emea_def='{"version":1,"root":{"op":"and","conditions":[{"field":"attr.region","op":"=","value":"EMEA"}]}}'
+curl -sf -X POST "$API/api/segments" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"Strategic accounts\",\"description\":\"is_strategic = true\",\"definition\":$strategic_def}" \
+    >/dev/null && echo "  Created segment: Strategic accounts"
+curl -sf -X POST "$API/api/segments" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"EMEA region\",\"description\":\"region = EMEA\",\"definition\":$emea_def}" \
+    >/dev/null && echo "  Created segment: EMEA region"
 
 echo ""
 echo "=== Checking results ==="

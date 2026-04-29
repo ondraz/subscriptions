@@ -182,16 +182,20 @@ See [deployment.md](../development/deployment.md#observability) for operator acc
 - **Self-hosted deployment** via Docker (PostgreSQL + Kafka + API + Worker)
 - **Documented metric methodology** — every formula explained and auditable
 
-### P1 (Nice-to-Have)
+### P1 (Implemented)
+
+- LTV and ARPU (`metric_ltv_invoice` + `LtvInvoiceCube`)
+- Expansion / contraction / reactivation MRR breakdown (movement types in `metric_mrr_movement`)
+- Trial conversion tracking (`metric_trial`, cohort-based funnel)
+- Customer segmentation — saved `SegmentDef` JSON, EAV `customer_attribute` table, compare-mode CROSS JOIN compilation. See [Segmentation](segments.md).
+- Web dashboard UI (`frontend/`)
+
+### P1 (Remaining)
 
 - Lago integration via direct PostgreSQL access (same-database mode)
 - Kill Bill integration
-- LTV and CAC computation
-- Expansion/contraction MRR breakdown
-- Customer segmentation
-- Web dashboard UI
+- CAC computation
 - Data warehouse export
-- Trial conversion tracking
 
 ### Non-Goals for V1
 

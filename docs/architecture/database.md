@@ -232,6 +232,16 @@ Each metric creates its own tables, prefixed with `metric_`. Monetary columns in
 | LTV | `metric_ltv_customer_revenue` | Cumulative revenue per customer |
 | Trials | `metric_trial`, `metric_trial_event` | Per-trial outcome (cohort queries); append-only lifecycle log |
 
+## Segments & Attributes
+
+Workspace-scoped tables powering the [segmentation layer](segments.md). Shared with the dashboard/chart tables in `models_auth.py` so the application schema stays in one SQLAlchemy `metadata`.
+
+| Table | Purpose |
+|-------|---------|
+| `attribute_definition` | Schema registry — `key`, `label`, `type` (`string | number | boolean | timestamp`), `source` (`stripe | csv | api | computed`) |
+| `customer_attribute` | EAV value rows — one per `(source_id, customer_id, key)`. Only the `value_*` column matching the declared type is populated. Index `(key, source_id, customer_id)` matches the typical segment read pattern (filter attribute first, then intersect to customers) |
+| `segment` | Saved segment definitions — JSON `SegmentDef` stored in `definition`, `created_by` captures auditing (workspace-shared — no per-user filter) |
+
 ## Event Log
 
 The `event_log` table is a permanent archive of all [internal events](events.md). It serves two purposes:

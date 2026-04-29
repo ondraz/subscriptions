@@ -7,6 +7,7 @@ import { BarBreakdownChart } from '@/components/charts/BarBreakdownChart'
 import { WaterfallChart } from '@/components/charts/WaterfallChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
 import { DimensionPicker } from '@/components/controls/DimensionPicker'
+import { SegmentPicker } from '@/components/controls/SegmentPicker'
 import { formatCurrency, formatPeriod } from '@/lib/formatters'
 import { MRR_DIMENSIONS } from '@/lib/constants'
 import { useMemo, useState } from 'react'
@@ -20,17 +21,25 @@ interface MRRSeriesRow {
 export function MRRReport() {
   const { start, end, interval } = useTimeRange({ range: 'last_1y' })
   const [dimensions, setDimensions] = useState<string[]>([])
+  const [segment, setSegment] = useState<string | null>(null)
+  const [compareSegments, setCompareSegments] = useState<string[]>([])
+  // Segment params are piped into every hook below so MRR cards + charts
+  // all narrow consistently.  Compare mode is informational here — the
+  // breakdown chart doesn't render per-segment bars yet; that's the next
+  // iteration.
+  const segParams = { segment: segment ?? undefined, compare_segments: compareSegments.length ? compareSegments : undefined }
 
-  const { data: breakdown, isLoading: breakdownLoading } = useMRRBreakdown<Record<string, unknown>[]>({ start, end, dimensions })
-  const { data: waterfall, isLoading: waterfallLoading } = useMRRWaterfall<WaterfallEntry[]>({ start, end, interval })
-  const { data: currentMrr, isLoading: mrrLoading } = useMRR<number>({})
-  const { data: currentArr, isLoading: arrLoading } = useARR<number>()
+  const { data: breakdown, isLoading: breakdownLoading } = useMRRBreakdown<Record<string, unknown>[]>({ start, end, dimensions, ...segParams })
+  const { data: waterfall, isLoading: waterfallLoading } = useMRRWaterfall<WaterfallEntry[]>({ start, end, interval, ...segParams })
+  const { data: currentMrr, isLoading: mrrLoading } = useMRR<number>({ ...segParams })
+  const { data: currentArr, isLoading: arrLoading } = useARR<number>({ ...segParams })
 
   // Fetch MRR movements from beginning of time so cumulative sum = MRR level
   const { data: mrrSeries, isLoading: seriesLoading } = useMRR<MRRSeriesRow[]>({
     start: '2000-01-01',
     end,
     interval,
+    ...segParams,
   })
 
   // Compute cumulative MRR levels from movements, filter to visible range
@@ -120,6 +129,13 @@ export function MRRReport() {
         selected={dimensions}
         onChange={setDimensions}
         single
+      />
+
+      <SegmentPicker
+        segment={segment}
+        onSegmentChange={setSegment}
+        compareSegments={compareSegments}
+        onCompareSegmentsChange={setCompareSegments}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

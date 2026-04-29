@@ -12,6 +12,7 @@ import { KPICard } from '@/components/charts/KPICard'
 import { BarBreakdownChart } from '@/components/charts/BarBreakdownChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
 import { DimensionPicker } from '@/components/controls/DimensionPicker'
+import { SegmentPicker } from '@/components/controls/SegmentPicker'
 import { formatCurrency, formatPercent, formatPeriod } from '@/lib/formatters'
 import { periodStarts, periodEnd } from '@/lib/periods'
 import { COLORS } from '@/lib/colors'
@@ -40,6 +41,12 @@ function rateWindow(
 export function ChurnReport() {
   const { start, end, interval } = useTimeRange({ range: 'last_1y' })
   const [dimensions, setDimensions] = useState<string[]>([])
+  const [segment, setSegment] = useState<string | null>(null)
+  const [compareSegments, setCompareSegments] = useState<string[]>([])
+  const segParams = {
+    segment: segment ?? undefined,
+    compare_segments: compareSegments.length ? compareSegments : undefined,
+  }
   const dimKey = dimensions[0]
   const { rateStart, rateEnd } = useMemo(
     () => rateWindow(start, end, interval),
@@ -47,10 +54,10 @@ export function ChurnReport() {
   )
 
   const { data: logoRate, isLoading: logoRateLoading } = useChurn<number | null>({
-    start: rateStart, end: rateEnd, type: 'logo',
+    start: rateStart, end: rateEnd, type: 'logo', ...segParams,
   })
   const { data: revRate, isLoading: revRateLoading } = useChurn<number | null>({
-    start: rateStart, end: rateEnd, type: 'revenue',
+    start: rateStart, end: rateEnd, type: 'revenue', ...segParams,
   })
 
   // Segmented lost-revenue breakdown over the full window. The churn
@@ -63,6 +70,7 @@ export function ChurnReport() {
     end,
     type: 'revenue',
     ...(dimKey ? { dimensions: [dimKey] } : {}),
+    ...segParams,
   })
   const segmentChart = useMemo(() => {
     if (!dimKey || !Array.isArray(segmentData)) return []
@@ -73,11 +81,11 @@ export function ChurnReport() {
   }, [segmentData, dimKey])
 
   const { data: detail, isLoading: detailLoading } =
-    useChurnCustomers<ChurnCustomerDetail[]>({ start: rateStart, end: rateEnd })
+    useChurnCustomers<ChurnCustomerDetail[]>({ start: rateStart, end: rateEnd, ...segParams })
   const { data: revEvents } =
-    useChurnRevenueEvents<ChurnRevenueEvent[]>({ start: rateStart, end: rateEnd })
+    useChurnRevenueEvents<ChurnRevenueEvent[]>({ start: rateStart, end: rateEnd, ...segParams })
   const { data: waterfall, isLoading: waterfallLoading } =
-    useMRRWaterfall<WaterfallEntry[]>({ start, end, interval })
+    useMRRWaterfall<WaterfallEntry[]>({ start, end, interval, ...segParams })
 
   // Churn timeline — one API call per period for both logo + revenue,
   // each queried closed-closed [period-start, period-end]. The interval
@@ -88,13 +96,13 @@ export function ChurnReport() {
       const pEnd = periodEnd(p, interval)
       return [
         {
-          queryKey: ['metrics', 'churn', { start: p, end: pEnd, type: 'logo' }],
-          queryFn: () => fetchChurn<number | null>({ start: p, end: pEnd, type: 'logo' }),
+          queryKey: ['metrics', 'churn', { start: p, end: pEnd, type: 'logo', ...segParams }],
+          queryFn: () => fetchChurn<number | null>({ start: p, end: pEnd, type: 'logo', ...segParams }),
           staleTime: 60_000,
         },
         {
-          queryKey: ['metrics', 'churn', { start: p, end: pEnd, type: 'revenue' }],
-          queryFn: () => fetchChurn<number | null>({ start: p, end: pEnd, type: 'revenue' }),
+          queryKey: ['metrics', 'churn', { start: p, end: pEnd, type: 'revenue', ...segParams }],
+          queryFn: () => fetchChurn<number | null>({ start: p, end: pEnd, type: 'revenue', ...segParams }),
           staleTime: 60_000,
         },
       ]
@@ -137,6 +145,13 @@ export function ChurnReport() {
         selected={dimensions}
         onChange={setDimensions}
         single
+      />
+
+      <SegmentPicker
+        segment={segment}
+        onSegmentChange={setSegment}
+        compareSegments={compareSegments}
+        onCompareSegmentsChange={setCompareSegments}
       />
 
       <div className="text-xs text-muted-foreground">

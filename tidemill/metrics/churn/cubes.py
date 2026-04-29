@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from tidemill.metrics.mrr.cubes import _COHORT_MONTH_SQL, _TENURE_MONTHS_SQL
 from tidemill.metrics.query import (
     Count,
     CountDistinct,
@@ -38,6 +39,9 @@ class ChurnCustomerStateCube(Cube):
         customer_id = Dim("cs.customer_id")
         customer_name = Dim("c.name", join="customer", label="customer_name")
         customer_country = Dim("c.country", join="customer", label="customer_country")
+        # Computed
+        tenure_months = Dim(_TENURE_MONTHS_SQL, join="customer", label="Tenure (months)")
+        cohort_month = Dim(_COHORT_MONTH_SQL, join="customer", label="Cohort month")
 
     class TimeDimensions:
         first_active_at = TimeDim("cs.first_active_at")
@@ -77,6 +81,9 @@ class ChurnEventCube(Cube):
         customer_first_active = Dim(
             "cs.first_active_at", join="customer_state", label="customer_first_active"
         )
+        # Computed
+        tenure_months = Dim(_TENURE_MONTHS_SQL, join="customer", label="Tenure (months)")
+        cohort_month = Dim(_COHORT_MONTH_SQL, join="customer", label="Cohort month")
 
     class TimeDimensions:
         occurred_at = TimeDim("ce.occurred_at")

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from tidemill.metrics.base import Metric, QuerySpec
 from tidemill.metrics.registry import register
 from tidemill.metrics.retention.cubes import RetentionCohortCube
+from tidemill.segments.compiler import build_spec_fragment
 
 if TYPE_CHECKING:
     from fastapi import APIRouter
@@ -23,6 +24,26 @@ def _to_month(value: Any) -> date:
     if isinstance(value, datetime):
         value = value.date()
     return value.replace(day=1)
+
+
+def _filter_only(spec: QuerySpec | None) -> QuerySpec | None:
+    """Return a spec with compare stripped — segment filter kept.
+
+    Used by the cohort-matrix path: the matrix's three axes are
+    ``cohort_month`` × ``active_month`` × customer; adding segment_id as a
+    fourth axis would produce a 4-D result that the current chart can't
+    render.  Callers get segment-*filtered* retention (universe narrowed)
+    while compare silently falls back to the union of branches.
+    """
+    if spec is None:
+        return None
+    if not spec.compare:
+        return spec
+    from copy import copy
+
+    clone = copy(spec)
+    clone.compare = None
+    return clone
 
 
 def _month_range(first: date, last: date) -> list[date]:
@@ -107,9 +128,9 @@ class RetentionMetric(Metric):
                     spec,
                 )
             case "nrr":
-                return await self._nrr(params["start"], params["end"])
+                return await self._nrr(params["start"], params["end"], spec)
             case "grr":
-                return await self._grr(params["start"], params["end"])
+                return await self._grr(params["start"], params["end"], spec)
             case other:
                 raise ValueError(f"Unknown query_type: {other}")
 
@@ -136,11 +157,17 @@ class RetentionMetric(Metric):
         mm = MRRMovementCube
 
         # 1. Cohort = month of first `new` movement, per customer.
+        # Apply segment (universe filter) so the cohort matrix is scoped.
+        # Compare on a cohort matrix would return per-segment matrices;
+        # not supported in MVP — treat compare like a plain segment list
+        # (matrix shows the union of customers matching any branch).
+        segment_frag = await build_spec_fragment(mm, _filter_only(spec), self.db)
         nq = (
             mm.dimension("customer_id")
             + mm.measures.amount
             + mm.filter("movement_type", "=", "new")
             + mm.time_grain("occurred_at", "month")
+            + segment_frag
         )
         nstmt, nparams = nq.compile(mm)
         nrows = (await self.db.execute(nstmt, nparams)).mappings().all()
@@ -168,6 +195,7 @@ class RetentionMetric(Metric):
             + mm.measures.amount
             + mm.filter("occurred_at", "<=", end)
             + mm.time_grain("occurred_at", "month")
+            + segment_frag
         )
         mstmt, mparams = mq.compile(mm)
         mrows = (await self.db.execute(mstmt, mparams)).mappings().all()
@@ -212,13 +240,13 @@ class RetentionMetric(Metric):
             for (cohort_m, active_m), count in sorted(active_counts.items())
         ]
 
-    async def _nrr(self, start: date, end: date) -> float | None:
+    async def _nrr(self, start: date, end: date, spec: QuerySpec | None = None) -> Any:
         """Net Revenue Retention = (start_mrr + expansion - contraction - churn) / start_mrr."""
-        return await self._revenue_retention(start, end, include_expansion=True)
+        return await self._revenue_retention(start, end, include_expansion=True, spec=spec)
 
-    async def _grr(self, start: date, end: date) -> float | None:
+    async def _grr(self, start: date, end: date, spec: QuerySpec | None = None) -> Any:
         """Gross Revenue Retention = (start_mrr - contraction - churn) / start_mrr."""
-        return await self._revenue_retention(start, end, include_expansion=False)
+        return await self._revenue_retention(start, end, include_expansion=False, spec=spec)
 
     async def _revenue_retention(
         self,
@@ -226,19 +254,19 @@ class RetentionMetric(Metric):
         end: date,
         *,
         include_expansion: bool,
-    ) -> float | None:
+        spec: QuerySpec | None = None,
+    ) -> Any:
         from tidemill.metrics.mrr.cubes import MRRMovementCube
 
         mm = MRRMovementCube
+        has_compare = bool(spec and spec.compare)
 
         # Start-of-period MRR = cumulative movements before `start`.
         # (The snapshot table stores current state only, not a time series.)
         sq = mm.measures.amount + mm.filter("occurred_at", "<", start)
+        sq = sq + await build_spec_fragment(mm, spec, self.db)
         sstmt, sparams = sq.compile(mm)
         srows = (await self.db.execute(sstmt, sparams)).mappings().all()
-        start_mrr = int(srows[0]["amount_base"] or 0) if srows else 0
-        if start_mrr <= 0:
-            return None
 
         # Movements in [start, end] (closed-closed; filter layer extends
         # `end` to end-of-day).
@@ -247,9 +275,40 @@ class RetentionMetric(Metric):
             + mm.dimension("movement_type")
             + mm.filter("occurred_at", "between", (start, end))
         )
+        mq = mq + await build_spec_fragment(mm, spec, self.db)
         stmt, params = mq.compile(mm)
         result = await self.db.execute(stmt, params)
-        by_type = {r["movement_type"]: r["amount_base"] for r in result.mappings().all()}
+        mrows = result.mappings().all()
+
+        if has_compare and spec is not None and spec.compare:
+            start_by_seg = {r["segment_id"]: float(r["amount_base"] or 0) for r in srows}
+            by_seg_type: dict[str, dict[str, float]] = {}
+            for r in mrows:
+                by_seg_type.setdefault(r["segment_id"], {})[r["movement_type"]] = float(
+                    r["amount_base"] or 0
+                )
+            out = []
+            for seg_id, _ in spec.compare:
+                s_mrr = start_by_seg.get(seg_id, 0.0)
+                if s_mrr <= 0:
+                    out.append({"segment_id": seg_id, "retention_rate": None})
+                    continue
+                bt = by_seg_type.get(seg_id, {})
+                contraction = abs(bt.get("contraction", 0))
+                churn = abs(bt.get("churn", 0))
+                if include_expansion:
+                    expansion = bt.get("expansion", 0) + bt.get("reactivation", 0)
+                    rate = float((s_mrr + expansion - contraction - churn) / s_mrr)
+                else:
+                    rate = float((s_mrr - contraction - churn) / s_mrr)
+                out.append({"segment_id": seg_id, "retention_rate": rate})
+            return out
+
+        start_mrr = int(srows[0]["amount_base"] or 0) if srows else 0
+        if start_mrr <= 0:
+            return None
+
+        by_type = {r["movement_type"]: r["amount_base"] for r in mrows}
 
         contraction = abs(by_type.get("contraction", 0))
         churn = abs(by_type.get("churn", 0))

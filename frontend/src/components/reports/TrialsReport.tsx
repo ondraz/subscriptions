@@ -1,19 +1,27 @@
+import { useState } from 'react'
 import { useTimeRange } from '@/hooks/useTimeRange'
 import { useTrialFunnel, useTrialSeries } from '@/hooks/useMetrics'
 import { KPICard } from '@/components/charts/KPICard'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { BarBreakdownChart } from '@/components/charts/BarBreakdownChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
+import { SegmentPicker } from '@/components/controls/SegmentPicker'
 import { formatPercent, formatNumber, formatPeriod } from '@/lib/formatters'
 import { COLORS } from '@/lib/colors'
 import type { TrialFunnel, TrialSeriesRow } from '@/lib/types'
 
 export function TrialsReport() {
   const { start, end, interval } = useTimeRange({ range: 'last_1y' })
+  const [segment, setSegment] = useState<string | null>(null)
+  const [compareSegments, setCompareSegments] = useState<string[]>([])
+  const segParams = {
+    segment: segment ?? undefined,
+    compare_segments: compareSegments.length ? compareSegments : undefined,
+  }
 
-  const { data: funnel, isLoading: funnelLoading } = useTrialFunnel<TrialFunnel>({ start, end })
+  const { data: funnel, isLoading: funnelLoading } = useTrialFunnel<TrialFunnel>({ start, end, ...segParams })
   const { data: rawSeries, isLoading: seriesLoading } = useTrialSeries<TrialSeriesRow[]>({
-    start, end, interval,
+    start, end, interval, ...segParams,
   })
 
   const series = Array.isArray(rawSeries) ? rawSeries : []
@@ -42,6 +50,13 @@ export function TrialsReport() {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Trials</h2>
+
+      <SegmentPicker
+        segment={segment}
+        onSegmentChange={setSegment}
+        compareSegments={compareSegments}
+        onCompareSegmentsChange={setCompareSegments}
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard

@@ -2,6 +2,11 @@
 
 - ``MRRSnapshotCube``  — current MRR per subscription
 - ``MRRMovementCube``  — append-only log of MRR changes
+
+Computed dimensions (``mrr_band``, ``arr_band``, ``tenure_months``,
+``cohort_month``) are expressed as raw SQL in the ``Dim.column`` field —
+``literal_column`` handles arbitrary expressions, so the segmentation layer
+can filter or group by them exactly like any declared column.
 """
 
 from __future__ import annotations
@@ -14,6 +19,45 @@ from tidemill.metrics.query import (
     Sum,
     TimeDim,
 )
+
+# ── Shared computed-dimension SQL ───────────────────────────────────────
+# These expressions assume the customer alias is `c` (every cube with a
+# `customer` join uses this alias today).
+
+_TENURE_MONTHS_SQL = (
+    "(EXTRACT(YEAR FROM AGE(CURRENT_DATE, c.created_at))::int * 12 "
+    "+ EXTRACT(MONTH FROM AGE(CURRENT_DATE, c.created_at))::int)"
+)
+
+_COHORT_MONTH_SQL = "DATE_TRUNC('month', c.created_at)::date"
+
+
+def _mrr_band_sql(mrr_col: str) -> str:
+    """Bucket an MRR-in-cents column into labeled bands."""
+    return (
+        "CASE"
+        f" WHEN {mrr_col} <= 0 THEN 'Free'"
+        f" WHEN {mrr_col} < 10000 THEN '<$100'"
+        f" WHEN {mrr_col} < 50000 THEN '$100-$500'"
+        f" WHEN {mrr_col} < 100000 THEN '$500-$1000'"
+        f" WHEN {mrr_col} < 500000 THEN '$1000-$5000'"
+        " ELSE '$5000+'"
+        " END"
+    )
+
+
+def _arr_band_sql(mrr_col: str) -> str:
+    """Bucket an annualized MRR column (= ``mrr_col * 12``) into labeled bands."""
+    return (
+        "CASE"
+        f" WHEN {mrr_col} * 12 <= 0 THEN 'Free'"
+        f" WHEN {mrr_col} * 12 < 120000 THEN '<$1.2k'"
+        f" WHEN {mrr_col} * 12 < 600000 THEN '$1.2k-$6k'"
+        f" WHEN {mrr_col} * 12 < 1200000 THEN '$6k-$12k'"
+        f" WHEN {mrr_col} * 12 < 6000000 THEN '$12k-$60k'"
+        " ELSE '$60k+'"
+        " END"
+    )
 
 
 class MRRSnapshotCube(Cube):
@@ -74,6 +118,11 @@ class MRRSnapshotCube(Cube):
         cancel_at_period_end = Dim(
             "sub.cancel_at_period_end", join="subscription", label="cancel_at_period_end"
         )
+        # Computed — buckets and customer-tenure derived from c.created_at.
+        mrr_band = Dim(_mrr_band_sql("s.mrr_base_cents"), join="customer", label="MRR band")
+        arr_band = Dim(_arr_band_sql("s.mrr_base_cents"), join="customer", label="ARR band")
+        tenure_months = Dim(_TENURE_MONTHS_SQL, join="customer", label="Tenure (months)")
+        cohort_month = Dim(_COHORT_MONTH_SQL, join="customer", label="Cohort month")
 
     class TimeDimensions:
         snapshot_at = TimeDim("s.snapshot_at")
@@ -135,6 +184,9 @@ class MRRMovementCube(Cube):
         collection_method = Dim(
             "sub.collection_method", join="subscription", label="collection_method"
         )
+        # Computed
+        tenure_months = Dim(_TENURE_MONTHS_SQL, join="customer", label="Tenure (months)")
+        cohort_month = Dim(_COHORT_MONTH_SQL, join="customer", label="Cohort month")
 
     class TimeDimensions:
         occurred_at = TimeDim("m.occurred_at")

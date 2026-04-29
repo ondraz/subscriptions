@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { useTimeRange } from '@/hooks/useTimeRange'
 import { useRetention } from '@/hooks/useMetrics'
@@ -7,6 +7,7 @@ import { KPICard } from '@/components/charts/KPICard'
 import { CohortHeatmap } from '@/components/charts/CohortHeatmap'
 import { BarBreakdownChart } from '@/components/charts/BarBreakdownChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
+import { SegmentPicker } from '@/components/controls/SegmentPicker'
 import { formatPercent, formatPeriod } from '@/lib/formatters'
 import { periodStarts, periodEnd } from '@/lib/periods'
 import type { CohortEntry, Interval } from '@/lib/types'
@@ -41,17 +42,23 @@ function rateWindow(
 
 export function RetentionReport() {
   const { start, end, interval } = useTimeRange({ range: 'last_1y' })
+  const [segment, setSegment] = useState<string | null>(null)
+  const [compareSegments, setCompareSegments] = useState<string[]>([])
+  const segParams = {
+    segment: segment ?? undefined,
+    compare_segments: compareSegments.length ? compareSegments : undefined,
+  }
   const { rateStart, rateEnd } = useMemo(
     () => rateWindow(start, end, interval),
     [start, end, interval],
   )
 
-  const { data: cohortRaw, isLoading: cohortLoading } = useRetention<RawCohortRow[]>({ start, end })
+  const { data: cohortRaw, isLoading: cohortLoading } = useRetention<RawCohortRow[]>({ start, end, ...segParams })
   const { data: nrr, isLoading: nrrLoading } = useRetention<number | null>({
-    start: rateStart, end: rateEnd, query_type: 'nrr',
+    start: rateStart, end: rateEnd, query_type: 'nrr', ...segParams,
   })
   const { data: grr, isLoading: grrLoading } = useRetention<number | null>({
-    start: rateStart, end: rateEnd, query_type: 'grr',
+    start: rateStart, end: rateEnd, query_type: 'grr', ...segParams,
   })
 
   const cohortEntries: CohortEntry[] = Array.isArray(cohortRaw)
@@ -72,13 +79,13 @@ export function RetentionReport() {
       const pEnd = periodEnd(p, interval)
       return [
         {
-          queryKey: ['metrics', 'retention', { start: p, end: pEnd, query_type: 'nrr' }],
-          queryFn: () => fetchRetention<number | null>({ start: p, end: pEnd, query_type: 'nrr' }),
+          queryKey: ['metrics', 'retention', { start: p, end: pEnd, query_type: 'nrr', ...segParams }],
+          queryFn: () => fetchRetention<number | null>({ start: p, end: pEnd, query_type: 'nrr', ...segParams }),
           staleTime: 60_000,
         },
         {
-          queryKey: ['metrics', 'retention', { start: p, end: pEnd, query_type: 'grr' }],
-          queryFn: () => fetchRetention<number | null>({ start: p, end: pEnd, query_type: 'grr' }),
+          queryKey: ['metrics', 'retention', { start: p, end: pEnd, query_type: 'grr', ...segParams }],
+          queryFn: () => fetchRetention<number | null>({ start: p, end: pEnd, query_type: 'grr', ...segParams }),
           staleTime: 60_000,
         },
       ]
@@ -95,6 +102,13 @@ export function RetentionReport() {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Retention</h2>
+
+      <SegmentPicker
+        segment={segment}
+        onSegmentChange={setSegment}
+        compareSegments={compareSegments}
+        onCompareSegmentsChange={setCompareSegments}
+      />
 
       <div className="text-xs text-muted-foreground">
         Rates measured over {formatPeriod(rateStart, interval)} ({rateStart} → {rateEnd}).

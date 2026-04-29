@@ -109,6 +109,13 @@ app.include_router(sources.router, prefix="/api", dependencies=_auth_deps)
 app.include_router(api_keys_router, prefix="/api", dependencies=_auth_deps)
 app.include_router(dashboards_router, prefix="/api", dependencies=_auth_deps)
 
+# Segments & attributes
+from tidemill.attributes.routes import router as attributes_router  # noqa: E402
+from tidemill.segments.routes import router as segments_router  # noqa: E402
+
+app.include_router(segments_router, prefix="/api", dependencies=_auth_deps)
+app.include_router(attributes_router, prefix="/api", dependencies=_auth_deps)
+
 # Discover and mount per-metric routers
 from tidemill.metrics.registry import discover_metrics  # noqa: E402
 

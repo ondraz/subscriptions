@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from tidemill.metrics.mrr.cubes import _TENURE_MONTHS_SQL
 from tidemill.metrics.query import (
     CountDistinct,
     Cube,
@@ -42,6 +43,8 @@ class RetentionCohortCube(Cube):
         cohort_month = Dim("rc.cohort_month")
         active_month = Dim("ra.active_month", join="activity")
         customer_country = Dim("c.country", join="customer", label="customer_country")
+        # Computed
+        tenure_months = Dim(_TENURE_MONTHS_SQL, join="customer", label="Tenure (months)")
 
     class TimeDimensions:
         cohort_month_time = TimeDim("rc.cohort_month")

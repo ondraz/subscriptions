@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { useTimeRange } from '@/hooks/useTimeRange'
 import { useLTV, useARPU, useCohortLTV } from '@/hooks/useMetrics'
@@ -7,6 +7,7 @@ import { KPICard } from '@/components/charts/KPICard'
 import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { BarBreakdownChart } from '@/components/charts/BarBreakdownChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
+import { SegmentPicker } from '@/components/controls/SegmentPicker'
 import { formatCurrency, formatPercent, formatMonthYear, formatPeriod } from '@/lib/formatters'
 import { periodStarts, periodEnd } from '@/lib/periods'
 import { COLORS } from '@/lib/colors'
@@ -14,11 +15,17 @@ import type { CohortLTVEntry } from '@/lib/types'
 
 export function LTVReport() {
   const { start, end, interval } = useTimeRange({ range: 'last_1y' })
+  const [segment, setSegment] = useState<string | null>(null)
+  const [compareSegments, setCompareSegments] = useState<string[]>([])
+  const segParams = {
+    segment: segment ?? undefined,
+    compare_segments: compareSegments.length ? compareSegments : undefined,
+  }
 
-  const { data: ltv, isLoading: ltvLoading } = useLTV<number | null>({ start, end })
-  const { data: arpu, isLoading: arpuLoading } = useARPU<number | null>()
+  const { data: ltv, isLoading: ltvLoading } = useLTV<number | null>({ start, end, ...segParams })
+  const { data: arpu, isLoading: arpuLoading } = useARPU<number | null>(segParams)
   const { data: cohortLtv, isLoading: cohortLoading } =
-    useCohortLTV<CohortLTVEntry[]>({ start, end })
+    useCohortLTV<CohortLTVEntry[]>({ start, end, ...segParams })
 
   // Implied monthly churn = ARPU / LTV (inverse of simple LTV formula).
   const impliedChurn = useMemo(() => {
@@ -35,13 +42,13 @@ export function LTVReport() {
       const at = periodEnd(p, interval)
       return [
         {
-          queryKey: ['metrics', 'arpu', { at }],
-          queryFn: () => fetchARPU<number | null>({ at }),
+          queryKey: ['metrics', 'arpu', { at, ...segParams }],
+          queryFn: () => fetchARPU<number | null>({ at, ...segParams }),
           staleTime: 60_000,
         },
         {
-          queryKey: ['metrics', 'mrr', { at }],
-          queryFn: () => fetchMRR<number | null>({ at }),
+          queryKey: ['metrics', 'mrr', { at, ...segParams }],
+          queryFn: () => fetchMRR<number | null>({ at, ...segParams }),
           staleTime: 60_000,
         },
       ]
@@ -65,6 +72,13 @@ export function LTVReport() {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Lifetime Value</h2>
+
+      <SegmentPicker
+        segment={segment}
+        onSegmentChange={setSegment}
+        compareSegments={compareSegments}
+        onCompareSegmentsChange={setCompareSegments}
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KPICard

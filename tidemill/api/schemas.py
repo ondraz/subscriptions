@@ -111,3 +111,47 @@ class DashboardChartAdd(BaseModel):
     saved_chart_id: str
     section_id: str
     position: int = 0
+
+
+# ── Segments ────────────────────────────────────────────────────────────
+
+
+class SegmentCreate(BaseModel):
+    name: str
+    description: str | None = None
+    definition: dict[str, Any]
+
+
+class SegmentUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    definition: dict[str, Any] | None = None
+
+
+class SegmentValidate(BaseModel):
+    definition: dict[str, Any]
+    # Cube to validate against — one of the registered metrics' cube names.
+    # If omitted, each known cube is tried and the union of errors returned.
+    metric: str | None = None
+
+
+# ── Attributes ──────────────────────────────────────────────────────────
+
+
+class AttributeDefinitionCreate(BaseModel):
+    key: str
+    label: str | None = None
+    type: str  # string | number | boolean | timestamp
+    description: str | None = None
+
+
+class AttributeDefinitionUpdate(BaseModel):
+    label: str | None = None
+    description: str | None = None
+
+
+class CustomerAttributesSet(BaseModel):
+    # Arbitrary {key: value} map; types inferred or resolved from existing
+    # attribute_definition rows.  Values are not strictly typed so the
+    # endpoint can accept whatever the caller sends.
+    attributes: dict[str, Any]

@@ -36,6 +36,7 @@ _CONSTRAINT_COLS = {
     "uq_retention_cohort_customer": "(source_id, customer_id)",
     "uq_retention_activity": "(source_id, customer_id, active_month)",
     "uq_trial_sub": "(source_id, subscription_id)",
+    "uq_customer_attr_source_cust_key": "(source_id, customer_id, key)",
 }
 
 _PG_CONSTRAINT_RE = re.compile(

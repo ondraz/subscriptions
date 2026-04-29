@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from tidemill.events import Event
+    from tidemill.metrics.query import Cube
+    from tidemill.segments.model import SegmentDef
 
 
 @dataclass
@@ -23,12 +25,21 @@ class QuerySpec:
 
     When *dimensions* is non-empty the metric returns a list of dicts (one per
     group).  When empty, a scalar or time series is returned as usual.
+
+    *segment* is a universe filter — every row of the metric query is
+    AND-restricted by the segment's conditions.  *compare* is a list of
+    ``(segment_id, SegmentDef)`` pairs that produce a single query tagging
+    each row with every branch it matches (CROSS JOIN VALUES + OR).  The
+    two compose: ``segment`` narrows the universe, ``compare`` then slices
+    it per branch.
     """
 
     dimensions: list[str] = field(default_factory=list)
     filters: dict[str, Any] = field(default_factory=dict)
     granularity: str | None = None
     time_range: tuple[str, str] | None = None
+    segment: SegmentDef | None = None
+    compare: tuple[tuple[str, SegmentDef], ...] | None = None
 
 
 class Metric(ABC):
@@ -61,6 +72,24 @@ class Metric(ABC):
     def router(self) -> APIRouter | None:
         """Optional FastAPI router for this metric's endpoints."""
         return None
+
+    @property
+    def primary_cube(self) -> type[Cube]:
+        """The cube exposed as this metric's filter/group-by surface.
+
+        Used by the field-discovery endpoint and segment validation so the
+        generic machinery doesn't have to hard-code which cube belongs to
+        which metric.  Defaults to ``self.model`` — metrics with multiple
+        cubes (e.g. churn, which owns both an event cube and a state cube)
+        should override to pick the one that carries the richest dimension
+        set for end-user filtering.
+        """
+        model = getattr(self, "model", None)
+        if model is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} must define `model` or override `primary_cube`"
+            )
+        return model
 
     @property
     def event_types(self) -> list[str]:

@@ -122,6 +122,15 @@ The seed script creates 19 customers by default across these archetypes:
 
 Beyond the initial 19 customers, the script adds **2-5 new trial customers each month** (except the last month). Some convert to Starter and some churn, producing realistic month-over-month growth patterns.
 
+### Customer Attributes & Example Segments
+
+After the webhook ingest finishes, `seed.sh` posts `deploy/seed/customer_attributes.csv` to `POST /api/attributes/import` (matched by email — seed customer emails are deterministic `seed-N@test.example.com`). That populates four attributes for the 19 archetype customers — `account_manager`, `region`, `industry`, `is_strategic` — covering data the segment builder couldn't otherwise reach via Stripe metadata. It then creates two starter segments via `POST /api/segments`:
+
+- **Strategic accounts** — `attr.is_strategic = true`
+- **EMEA region** — `attr.region = EMEA`
+
+so a fresh stack has something for the `SegmentPicker` to bind to. Stripe-sourced attributes (`seed`, `archetype`, `country` from `customer.metadata`) land automatically via the state consumer's `fan_out_customer_metadata` call — no separate import required.
+
 ### Cleanup
 
 Deleting a test clock deletes **all** resources attached to it (customers, subscriptions, invoices, charges):

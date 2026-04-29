@@ -15,6 +15,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     MetaData,
     Numeric,
@@ -227,6 +228,59 @@ subscription = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True)),
     UniqueConstraint("source_id", "external_id", name="uq_subscription_source"),
+)
+
+# ── Customer attributes & segments ──────────────────────────────────────
+# Workspace-scoped, not user-scoped — segments and attributes are shared
+# across all users in a Tidemill deployment.  The `segment` table mirrors
+# the saved_chart JSON-config pattern in models_auth.py.
+
+attribute_definition = Table(
+    "attribute_definition",
+    metadata,
+    Column("key", Text, primary_key=True),
+    Column("label", Text, nullable=False),
+    # 'string' | 'number' | 'boolean' | 'timestamp'
+    Column("type", Text, nullable=False),
+    # 'stripe' | 'csv' | 'api' | 'computed'
+    Column("source", Text, nullable=False),
+    Column("description", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True)),
+)
+
+customer_attribute = Table(
+    "customer_attribute",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("source_id", Text, nullable=False),
+    Column("customer_id", Text, nullable=False),
+    Column("key", Text, ForeignKey("attribute_definition.key"), nullable=False),
+    Column("value_string", Text),
+    Column("value_number", Numeric),
+    Column("value_bool", Boolean),
+    Column("value_timestamp", DateTime(timezone=True)),
+    # Origin is the source that wrote this value, e.g. 'stripe', 'csv', 'api'.
+    # Not the same as attribute_definition.source — a 'stripe' attribute may
+    # later be overridden by an 'api' upsert; origin records the last writer.
+    Column("origin", Text, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("source_id", "customer_id", "key", name="uq_customer_attr_source_cust_key"),
+    Index("ix_customer_attr_key_customer", "key", "source_id", "customer_id"),
+)
+
+segment = Table(
+    "segment",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("name", Text, nullable=False, unique=True),
+    Column("description", Text),
+    # JSON-encoded SegmentDef (see tidemill.segments.model).
+    Column("definition", Text, nullable=False),
+    # Nullable + no CASCADE — segments outlive their creator (workspace-shared).
+    Column("created_by", Text, ForeignKey("app_user.id")),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True)),
 )
 
 # Metric tables are defined in each metric's own tables.py module.

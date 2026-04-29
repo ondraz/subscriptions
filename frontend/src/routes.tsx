@@ -10,6 +10,7 @@ import { TrialsReport } from '@/components/reports/TrialsReport'
 import { DashboardList } from '@/components/dashboards/DashboardList'
 import { DashboardEditor } from '@/components/dashboards/DashboardEditor'
 import { APIKeyManager } from '@/components/settings/APIKeyManager'
+import { SegmentsPage } from '@/pages/SegmentsPage'
 
 export const router = createBrowserRouter([
   {
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
       { path: 'reports/retention', element: <RetentionReport /> },
       { path: 'reports/ltv', element: <LTVReport /> },
       { path: 'reports/trials', element: <TrialsReport /> },
+      { path: 'segments', element: <SegmentsPage /> },
       { path: 'settings/api-keys', element: <APIKeyManager /> },
     ],
   },

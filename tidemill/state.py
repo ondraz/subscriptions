@@ -86,6 +86,27 @@ async def _handle_customer(session: AsyncSession, event: Event) -> None:
                     "now": event.occurred_at,
                 },
             )
+            # Fan Stripe metadata out into typed customer_attribute rows so
+            # segments can filter on it.  We resolve the customer's internal
+            # id from (source_id, external_id) — the INSERT above may have
+            # generated a fresh UUID on first sight, so we re-read here.
+            meta = p.get("metadata") or {}
+            if meta:
+                from tidemill.attributes.ingest import fan_out_customer_metadata
+
+                cust_row = await session.execute(
+                    text("SELECT id FROM customer WHERE source_id = :src AND external_id = :eid"),
+                    {"src": event.source_id, "eid": p["external_id"]},
+                )
+                cust = cust_row.mappings().first()
+                if cust is not None:
+                    await fan_out_customer_metadata(
+                        session,
+                        source_id=event.source_id,
+                        customer_id=cust["id"],
+                        metadata=meta,
+                        origin="stripe",
+                    )
         case "customer.deleted":
             await session.execute(
                 text("DELETE FROM customer WHERE source_id = :src AND external_id = :eid"),

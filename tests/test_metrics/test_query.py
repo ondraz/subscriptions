@@ -43,7 +43,7 @@ class TestQueryFragmentAlgebra:
         assert result.measures == f.measures
 
     def test_commutativity(self):
-        """a + b should have the same joins as b + a."""
+        """A + b should have the same joins as b + a."""
         a = QueryFragment(joins=frozenset({"x"}), filters=())
         b = QueryFragment(joins=frozenset({"y"}), filters=())
         assert (a + b).joins == (b + a).joins == frozenset({"x", "y"})
@@ -197,7 +197,7 @@ class TestMRRSnapshotCompilation:
         assert "c.country" in sql
 
     def test_dimension_on_source_table_no_join(self):
-        """currency dimension lives on the source table — no join needed."""
+        """Currency dimension lives on the source table — no join needed."""
         m = MRRSnapshotCube
         q = m.measures.mrr + m.dimension("currency")
         stmt, params = q.compile(m)
@@ -258,7 +258,7 @@ class TestMRRSnapshotCompilation:
         assert "s.subscription_id" in sql.lower()
 
     def test_chained_join_dependency(self):
-        """plan depends on subscription — both should be joined."""
+        """Plan depends on subscription — both should be joined."""
         m = MRRSnapshotCube
         q = m.measures.mrr + m.dimension("plan_interval")
         stmt, params = q.compile(m)
@@ -270,7 +270,7 @@ class TestMRRSnapshotCompilation:
         assert sub_pos < plan_pos
 
     def test_product_join_chain(self):
-        """product depends on plan depends on subscription — all three joined in order."""
+        """Product depends on plan depends on subscription — all three joined in order."""
         m = MRRSnapshotCube
         q = m.measures.mrr + m.dimension("product_name")
         stmt, params = q.compile(m)

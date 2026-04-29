@@ -156,7 +156,7 @@ async def _seed(pg_db) -> None:  # noqa: RUF029
 
 class TestSubscriptionLifecyclePg:
     async def test_full_lifecycle(self, pg_db):
-        """create → activate → change → cancel → churn → reactivate on real PG."""
+        """Create → activate → change → cancel → churn → reactivate on real PG."""
         await _seed(pg_db)
 
         # Create (trialing)

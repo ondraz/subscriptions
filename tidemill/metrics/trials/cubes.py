@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from tidemill.metrics.mrr.cubes import _TENURE_MONTHS_SQL
 from tidemill.metrics.query import (
     Count,
     CountDistinct,
@@ -42,6 +43,8 @@ class TrialCube(Cube):
     class Dimensions:
         source_id = Dim("t.source_id")
         customer_country = Dim("c.country", join="customer", label="customer_country")
+        # Computed
+        tenure_months = Dim(_TENURE_MONTHS_SQL, join="customer", label="Tenure (months)")
 
     class TimeDimensions:
         started_at = TimeDim("t.started_at")

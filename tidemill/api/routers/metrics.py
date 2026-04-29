@@ -5,14 +5,38 @@ from __future__ import annotations
 import asyncio
 import calendar
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 
 from tidemill.metrics.base import QuerySpec
 from tidemill.metrics.route_helpers import coerce_numerics, query_metric
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 router = APIRouter(tags=["metrics"])
+
+
+def _load_cube(metric: str) -> Any:
+    """Resolve a metric's primary cube via the registry.
+
+    Keeps this router plugin-agnostic — each metric advertises its own
+    cube through ``Metric.primary_cube``; generic endpoints just ask.
+    """
+    from tidemill.metrics.registry import metric_primary_cube
+
+    cube = metric_primary_cube(metric)
+    if cube is None:
+        raise HTTPException(404, f"Unknown metric {metric!r}")
+    return cube
+
+
+async def _get_session() -> Any:
+    from tidemill.api.deps import get_session
+
+    async for s in get_session():
+        yield s
 
 
 @router.get("/metrics")
@@ -153,6 +177,94 @@ async def get_summary(
     result["quick_ratio"] = gains / losses if losses > 0 else None
 
     return coerce_numerics(result)
+
+
+@router.get("/metrics/{metric}/fields")
+async def get_metric_fields(
+    metric: str,
+    session: AsyncSession = Depends(_get_session),
+) -> dict[str, Any]:
+    """Return the full filter/group-by surface for a metric.
+
+    Powers the FE's dimension picker and segment builder — no hardcoded
+    dimension lists on the client.  The response shape:
+
+    .. code-block:: json
+
+        {
+          "dimensions":      [{"key": "...", "label": "...", "type": "..."}],
+          "time_dimensions": [{"key": "...", "label": "..."}],
+          "attributes":      [{"key": "attr.tier", "label": "Tier", "type": "string"}]
+        }
+
+    Dimension keys are the names declared on the cube (e.g.
+    ``customer_country``, ``mrr_band``).  Attribute keys are prefixed with
+    ``attr.`` so the FE can route them through the segment compiler's
+    ``attr.*`` path unchanged.  Computed dims (CASE / AGE expressions) are
+    surfaced alongside regular dims — callers don't need to know the
+    distinction to filter on them.
+    """
+    from sqlalchemy import text
+
+    cube = _load_cube(metric)
+
+    # Infer a reasonable dimension "type" from the SQL expression.  Most
+    # dims resolve via literal_column so we don't have introspective type
+    # data — string is the safe default; computed dims whose expression
+    # hints a type (``::date``, ``::int``, CASE WHEN arithmetic) are marked.
+    def _infer_dim_type(dim_def: Any) -> str:
+        col = (dim_def.column or "").lower()
+        if "::date" in col or "date_trunc" in col:
+            return "date"
+        if "::int" in col or "extract(" in col or "::numeric" in col:
+            return "number"
+        if col.startswith("case ") or col.startswith("case\n"):
+            return "string"
+        return "string"
+
+    dimensions = [
+        {
+            "key": name,
+            "label": d.label or name,
+            "type": _infer_dim_type(d),
+        }
+        for name, d in cube._dimensions.items()
+    ]
+    dimensions.sort(key=lambda d: d["key"])
+
+    time_dimensions = [
+        {"key": name, "label": td.label or name} for name, td in cube._time_dimensions.items()
+    ]
+    time_dimensions.sort(key=lambda d: d["key"])
+
+    attr_rows = (
+        (
+            await session.execute(
+                text(
+                    "SELECT key, label, type, source, description FROM attribute_definition"
+                    " ORDER BY key"
+                )
+            )
+        )
+        .mappings()
+        .all()
+    )
+    attributes = [
+        {
+            "key": f"attr.{r['key']}",
+            "label": r["label"],
+            "type": r["type"],
+            "source": r["source"],
+            "description": r["description"],
+        }
+        for r in attr_rows
+    ]
+
+    return {
+        "dimensions": dimensions,
+        "time_dimensions": time_dimensions,
+        "attributes": attributes,
+    }
 
 
 @router.post("/metrics/{metric}")

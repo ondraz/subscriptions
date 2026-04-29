@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from tidemill.metrics.mrr.cubes import _COHORT_MONTH_SQL, _TENURE_MONTHS_SQL
 from tidemill.metrics.query import (
     Count,
     CountDistinct,
@@ -46,6 +47,11 @@ class LtvInvoiceCube(Cube):
         currency = Dim("li.currency")
         customer_country = Dim("c.country", join="customer", label="customer_country")
         cohort_month = Dim("rc.cohort_month", join="cohort", label="cohort_month")
+        # Computed — customer-age based (independent of the cohort join).
+        tenure_months = Dim(_TENURE_MONTHS_SQL, join="customer", label="Tenure (months)")
+        customer_created_month = Dim(
+            _COHORT_MONTH_SQL, join="customer", label="Customer created month"
+        )
 
     class TimeDimensions:
         paid_at = TimeDim("li.paid_at")

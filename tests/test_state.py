@@ -238,7 +238,7 @@ class TestSubscriptionLifecycle:
 
     @pytest.mark.asyncio
     async def test_full_lifecycle(self, db):
-        """create → activate → change → churn → reactivate."""
+        """Create → activate → change → churn → reactivate."""
         await self._seed_refs(db)
 
         # Create
