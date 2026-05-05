@@ -1,0 +1,27 @@
+meta {
+  name: Update section
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{baseUrl}}/api/dashboards/:dashboardId/sections/:sectionId
+  body: json
+  auth: bearer
+}
+
+params:path {
+  dashboardId: {{dashboardId}}
+  sectionId: {{sectionId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "title": "MRR & ARR",
+    "position": 1
+  }
+}

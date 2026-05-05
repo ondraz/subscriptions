@@ -1,0 +1,30 @@
+meta {
+  name: MRR — compare segments
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/mrr?start={{start}}&end={{end}}&interval=month&compare_segments=seg-A&compare_segments=seg-B
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  interval: month
+  compare_segments: seg-A
+  compare_segments: seg-B
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Compare-mode: pass two or more segment ids. The metric runs once per
+  segment in a single SQL `UNION ALL` and returns rows tagged with a
+  `segment_id` column you can pivot on the client. Replace `seg-A` /
+  `seg-B` with real ids from `GET /api/segments`.
+}

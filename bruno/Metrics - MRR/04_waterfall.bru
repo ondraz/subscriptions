@@ -1,0 +1,26 @@
+meta {
+  name: MRR — waterfall (per period)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/mrr/waterfall?start={{start}}&end={{end}}&interval=month
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  interval: month
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Waterfall = breakdown bucketed by `interval`. Returns one row per
+  (period, movement_type). Same interval grammar as the series endpoint.
+}

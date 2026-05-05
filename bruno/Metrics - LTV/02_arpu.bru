@@ -1,0 +1,20 @@
+meta {
+  name: ARPU snapshot
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/ltv/arpu
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Average revenue per active subscription at `at` (defaults to today).
+  No date range needed.
+}

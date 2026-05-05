@@ -1,0 +1,51 @@
+meta {
+  name: Create segment
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/segments
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "Enterprise US",
+    "description": "US customers on the enterprise or plus tier",
+    "definition": {
+      "version": 1,
+      "root": {
+        "op": "and",
+        "conditions": [
+          {"field": "customer.country", "op": "=", "value": "US"},
+          {"field": "attr.tier", "op": "in", "value": ["enterprise", "plus"]},
+          {
+            "op": "or",
+            "conditions": [
+              {"field": "computed.mrr_band", "op": "=", "value": ">$1000"},
+              {"field": "subscription.collection_method", "op": "=", "value": "send_invoice"}
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
+
+docs {
+  Field grammar (see `tidemill/segments/model.py`):
+    customer.<col>      → c.<col>
+    subscription.<col>  → sub.<col>
+    attr.<key>          → EAV lookup (customer attribute)
+    computed.<name>     → cube CASE/expression dim (e.g. mrr_band)
+    <bare>              → cube dim, no prefix
+
+  Save the returned `id` into the `segmentId` env var to use it from the
+  metric folders.
+}

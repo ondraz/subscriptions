@@ -1,0 +1,19 @@
+meta {
+  name: Delete dashboard
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/dashboards/:dashboardId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  dashboardId: {{dashboardId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}

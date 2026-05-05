@@ -1,0 +1,25 @@
+meta {
+  name: Trial conversion funnel
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/trials/funnel?start={{start}}&end={{end}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Funnel stages: started → still_active → converted → churned. Useful
+  for the trials report and for compare-mode across customer segments.
+}

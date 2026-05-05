@@ -1,0 +1,30 @@
+meta {
+  name: Bulk CSV import
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/attributes/import
+  body: multipartForm
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:multipart-form {
+  file: @file(./fixtures/attributes.csv)
+  id_column: customer_id
+  id_kind: id
+}
+
+docs {
+  CSV uploader. `id_column` names the column with the customer key;
+  `id_kind` is `id` (internal UUID, default), `external` (connector id),
+  or `email`. Every other column is treated as an attribute. Type is
+  inferred from the first non-empty value per key.
+
+  Drop a sample file at `bruno/fixtures/attributes.csv` before sending.
+}

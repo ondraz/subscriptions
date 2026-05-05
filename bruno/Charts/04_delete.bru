@@ -1,0 +1,24 @@
+meta {
+  name: Delete saved chart
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/api/charts/:chartId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  chartId: {{savedChartId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Hard delete from the library. Detaches automatically from any
+  dashboard sections that referenced it.
+}

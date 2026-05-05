@@ -1,0 +1,26 @@
+meta {
+  name: Gross Revenue Retention
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/retention?start={{start}}&end={{end}}&query_type=grr
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  query_type: grr
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  GRR = (start MRR − contraction − churn) ÷ start MRR. Excludes
+  expansion, so it caps at 100%.
+}

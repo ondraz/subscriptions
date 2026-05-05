@@ -1,0 +1,26 @@
+meta {
+  name: MRR — group by dimension(s)
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/mrr?at={{end}}&dimensions=customer_country&dimensions=plan_name
+  body: none
+  auth: bearer
+}
+
+params:query {
+  at: {{end}}
+  dimensions: customer_country
+  dimensions: plan_name
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  `dimensions=` is repeatable. The response becomes a list of rows with
+  one column per requested dim. Combine with `filter=` to slice further.
+}

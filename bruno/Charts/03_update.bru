@@ -1,0 +1,38 @@
+meta {
+  name: Update saved chart
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/api/charts/:chartId
+  body: json
+  auth: bearer
+}
+
+params:path {
+  chartId: {{savedChartId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "MRR by country (rolling 12mo)",
+    "config": {
+      "metric": "mrr",
+      "query": {
+        "query_type": "series",
+        "start": "{{start}}",
+        "end": "{{end}}",
+        "interval": "month"
+      },
+      "spec": {
+        "dimensions": ["customer_country"]
+      },
+      "display": {"type": "line", "y_format": "money"}
+    }
+  }
+}

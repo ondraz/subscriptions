@@ -1,0 +1,21 @@
+meta {
+  name: List metrics
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/metrics
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Returns the names of every registered metric, e.g.
+  `["churn", "ltv", "mrr", "retention", "trials"]`. Plug a name into the
+  other discovery endpoints to see what it can do.
+}

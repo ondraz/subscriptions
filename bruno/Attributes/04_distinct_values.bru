@@ -1,0 +1,29 @@
+meta {
+  name: Distinct attribute values
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/attributes/:key/values?limit=50
+  body: none
+  auth: bearer
+}
+
+params:path {
+  key: tier
+}
+
+params:query {
+  limit: 50
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Powers the segment-builder autocomplete. Returns up to `limit` distinct
+  observed values for the attribute. Dates / timestamps come back as
+  ISO-8601 strings.
+}

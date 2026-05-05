@@ -270,3 +270,15 @@ Not included in v1. The API is designed to run behind a reverse proxy or VPN. Au
 ## Interactive Documentation
 
 FastAPI auto-generates OpenAPI docs at `/docs` (Swagger UI) and `/redoc`.
+
+A runnable Bruno collection lives at [`bruno/`](../../bruno/) covering every
+endpoint listed above — health, auth, sources, webhooks, metrics (with
+working examples for `dimensions=`, `filter=`, `segment=`, and
+`compare_segments=`), segments, attributes, dashboards, and saved charts.
+Open the folder in the Bruno desktop app or run a request from the CLI:
+
+```bash
+bru run --env Local "Metrics - MRR/02_series.bru"
+```
+
+See `bruno/README.md` for the env vars and auth modes.

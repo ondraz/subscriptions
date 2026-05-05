@@ -1,0 +1,37 @@
+meta {
+  name: Set customer attributes
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/customers/:customerId/attributes
+  body: json
+  auth: bearer
+}
+
+params:path {
+  customerId: {{customerId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "attributes": {
+      "tier": "enterprise",
+      "mrr_target_cents": 250000,
+      "is_design_partner": true,
+      "onboarded_at": "2026-02-15T00:00:00Z"
+    }
+  }
+}
+
+docs {
+  Upserts attribute values. New keys auto-create their definition with an
+  inferred type ("true"/"false" → boolean, ISO-8601 → timestamp, parses
+  as number → number, else string). `customerId` is the internal UUID
+  (not Stripe's `cus_…`).
+}

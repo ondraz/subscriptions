@@ -1,0 +1,26 @@
+meta {
+  name: KPI summary
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/summary?start={{start}}&end={{end}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Single-call dashboard payload: MRR, ARR, logo + revenue churn, NRR, LTV,
+  ARPU, trial conversion, active customers, quick ratio. Both params are
+  optional — the default window is the last full calendar month.
+}

@@ -1,0 +1,32 @@
+meta {
+  name: Metric filter/group surface
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/:metric/fields
+  body: none
+  auth: bearer
+}
+
+params:path {
+  metric: mrr
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Drives the FE dimension picker and segment builder. Returns:
+
+    {
+      "dimensions":      [{key, label, type}, …],
+      "time_dimensions": [{key, label}, …],
+      "attributes":      [{key: "attr.<name>", label, type, source, …}, …]
+    }
+
+  The keys here are exactly what you pass to `dimensions=`,
+  `filter=key=value`, or as `field` in a SegmentDef.
+}

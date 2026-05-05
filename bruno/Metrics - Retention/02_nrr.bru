@@ -1,0 +1,26 @@
+meta {
+  name: Net Revenue Retention
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/retention?start={{start}}&end={{end}}&query_type=nrr
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  query_type: nrr
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  NRR = (start MRR + expansion − contraction − churn) ÷ start MRR.
+  Cohort = customers active at window start.
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Churn revenue events
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/churn/revenue-events?start={{start}}&end={{end}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Lossy events that contribute to revenue churn (cancellations,
+  downgrades, voluntary contractions). Useful when reconciling a churn
+  number against the underlying movements.
+}

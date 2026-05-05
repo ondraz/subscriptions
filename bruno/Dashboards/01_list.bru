@@ -1,0 +1,20 @@
+meta {
+  name: List dashboards
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/dashboards
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Returns the current user's dashboards (per-user, not workspace-shared
+  like segments). With auth disabled the owner is `anonymous`.
+}

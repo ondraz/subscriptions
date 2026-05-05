@@ -1,0 +1,25 @@
+meta {
+  name: MRR — movement breakdown
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/mrr/breakdown?start={{start}}&end={{end}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Net new MRR split by `movement_type`: new, expansion, contraction, churn,
+  reactivation. Useful for the MRR waterfall card.
+}

@@ -1,0 +1,26 @@
+meta {
+  name: MRR — saved segment filter
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/mrr?at={{end}}&segment={{segmentId}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  at: {{end}}
+  segment: {{segmentId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Pass a saved segment id (created via `Segments/02_create.bru`). The
+  backend resolves the id → `SegmentDef` → `QueryFragment` and composes
+  it with the metric's own SQL — no string concatenation.
+}

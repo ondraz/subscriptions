@@ -1,0 +1,21 @@
+meta {
+  name: Current user
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/auth/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Returns the current user. With auth disabled returns `{"id": "anonymous"}`.
+  With auth enabled, send a Clerk JWT (not an API key) — first call will
+  upsert a row into `app_user`.
+}

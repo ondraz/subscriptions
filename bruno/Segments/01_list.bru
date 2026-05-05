@@ -1,0 +1,21 @@
+meta {
+  name: List segments
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/segments
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Workspace-shared segment library, ordered by `updated_at`. The `id`
+  values here are what you pass as `segment=` / `compare_segments=` on
+  metric endpoints.
+}

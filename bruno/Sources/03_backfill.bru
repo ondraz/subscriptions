@@ -1,0 +1,25 @@
+meta {
+  name: Trigger backfill
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/sources/:sourceId/backfill
+  body: none
+  auth: bearer
+}
+
+params:path {
+  sourceId: {{sourceId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Kicks off `connector.backfill()` as a FastAPI background task — replays
+  historical events through the Kafka producer. Returns immediately; watch
+  worker logs for progress.
+}

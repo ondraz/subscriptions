@@ -1,0 +1,16 @@
+meta {
+  name: Liveness probe
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/healthz
+  body: none
+  auth: none
+}
+
+docs {
+  Always returns `{"status": "ok"}`. Used by Kubernetes / load balancers
+  to confirm the process is up — does not check the database.
+}

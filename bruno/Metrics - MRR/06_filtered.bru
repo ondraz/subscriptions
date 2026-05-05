@@ -1,0 +1,27 @@
+meta {
+  name: MRR — filter by cube field
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/mrr?at={{end}}&filter=currency=usd&filter=customer_country=US
+  body: none
+  auth: bearer
+}
+
+params:query {
+  at: {{end}}
+  filter: currency=usd
+  filter: customer_country=US
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Demonstrates the shared `filter=key=value` parameter (repeatable). Keys
+  match the cube dimension names returned by `/api/metrics/mrr/fields`.
+  Use `attr.<key>` to filter on a customer attribute.
+}

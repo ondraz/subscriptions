@@ -1,0 +1,26 @@
+meta {
+  name: Trial outcomes time series
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/trials/series?start={{start}}&end={{end}}&interval=month
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  interval: month
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Per-period counts of trial starts, conversions, expirations. `interval`
+  same grammar as MRR/series.
+}

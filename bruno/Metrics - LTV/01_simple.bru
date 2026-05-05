@@ -1,0 +1,26 @@
+meta {
+  name: LTV (simple)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/ltv?start={{start}}&end={{end}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Simple ARPU / churn-rate model over the window. Window should be wide
+  enough to actually contain churn — rolling 12 months is the safe
+  default.
+}

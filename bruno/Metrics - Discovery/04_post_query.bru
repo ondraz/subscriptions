@@ -1,0 +1,42 @@
+meta {
+  name: Generic POST metric query
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/metrics/:metric
+  body: json
+  auth: bearer
+}
+
+params:path {
+  metric: mrr
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "params": {
+      "query_type": "series",
+      "start": "{{start}}",
+      "end": "{{end}}",
+      "interval": "month"
+    },
+    "spec": {
+      "dimensions": ["customer_country"],
+      "filters": {"currency": "usd"},
+      "granularity": "month"
+    }
+  }
+}
+
+docs {
+  Escape hatch when query strings get unwieldy. Same effect as the metric
+  GET endpoints: `params` is the per-metric payload (`query_type`, dates,
+  etc.); `spec` is the cross-cutting QuerySpec (dimensions, filters,
+  granularity). Either field is optional.
+}

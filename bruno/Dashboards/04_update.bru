@@ -1,0 +1,26 @@
+meta {
+  name: Update dashboard
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/dashboards/:dashboardId
+  body: json
+  auth: bearer
+}
+
+params:path {
+  dashboardId: {{dashboardId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "Growth overview (Q2)",
+    "description": "Updated for the Q2 review"
+  }
+}

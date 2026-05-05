@@ -1,0 +1,16 @@
+meta {
+  name: Auth config (public)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/auth/config
+  body: none
+  auth: none
+}
+
+docs {
+  Public endpoint — reports whether auth is enabled and (if so) the Clerk
+  publishable key the frontend should bootstrap with.
+}

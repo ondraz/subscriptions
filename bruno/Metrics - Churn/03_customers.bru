@@ -1,0 +1,25 @@
+meta {
+  name: Churned customer detail
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/churn/customers?start={{start}}&end={{end}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Per-customer churn rows: who churned, when, lost MRR, last plan, etc.
+  Powers the "Churned customers" report drill-down.
+}

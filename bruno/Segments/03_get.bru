@@ -1,0 +1,19 @@
+meta {
+  name: Get segment
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/segments/:segmentId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  segmentId: {{segmentId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}

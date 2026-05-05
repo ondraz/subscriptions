@@ -1,0 +1,33 @@
+meta {
+  name: Add chart to section
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/dashboards/:dashboardId/charts
+  body: json
+  auth: bearer
+}
+
+params:path {
+  dashboardId: {{dashboardId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "saved_chart_id": "{{savedChartId}}",
+    "section_id": "{{sectionId}}",
+    "position": 0
+  }
+}
+
+docs {
+  Attach a chart from the saved-chart library into a dashboard section.
+  Many-to-many — the same `saved_chart_id` can appear on multiple
+  dashboards.
+}

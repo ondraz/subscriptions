@@ -1,0 +1,52 @@
+meta {
+  name: Stripe webhook
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/webhooks/stripe
+  body: json
+  auth: none
+}
+
+headers {
+  Stripe-Signature: t=0,v1=local-dev-replace-me
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "id": "evt_test_12345",
+    "type": "customer.subscription.created",
+    "data": {
+      "object": {
+        "id": "sub_test_1",
+        "customer": "cus_test_1",
+        "status": "active",
+        "items": {
+          "data": [
+            {
+              "price": {
+                "id": "price_basic",
+                "unit_amount": 2900,
+                "currency": "usd",
+                "recurring": {"interval": "month"}
+              },
+              "quantity": 1
+            }
+          ]
+        },
+        "current_period_start": 1735689600,
+        "current_period_end": 1738368000
+      }
+    }
+  }
+}
+
+docs {
+  In production Stripe POSTs here directly. Locally use
+  `stripe listen --forward-to localhost:8000/api/webhooks/stripe` so
+  signature verification works. Without `STRIPE_WEBHOOK_SECRET` set, the
+  signature header is ignored.
+}

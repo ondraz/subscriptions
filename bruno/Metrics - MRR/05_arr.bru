@@ -1,0 +1,20 @@
+meta {
+  name: ARR snapshot
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/arr
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Annualised MRR. `at=YYYY-MM-DD` for a historical snapshot; otherwise
+  uses today.
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Revenue churn
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/churn?start={{start}}&end={{end}}&type=revenue
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  type: revenue
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Gross revenue churn = MRR lost from churned customers ÷ MRR at window
+  start. Switch `type` to `net_revenue` to also subtract expansion (NRR
+  is exposed separately under retention).
+}

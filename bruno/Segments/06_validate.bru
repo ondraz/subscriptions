@@ -1,0 +1,39 @@
+meta {
+  name: Validate definition
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/segments/validate
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "metric": "mrr",
+    "definition": {
+      "version": 1,
+      "root": {
+        "op": "and",
+        "conditions": [
+          {"field": "customer.country", "op": "=", "value": "US"},
+          {"field": "attr.tier", "op": "in", "value": ["enterprise", "plus"]}
+        ]
+      }
+    }
+  }
+}
+
+docs {
+  Lints a SegmentDef without persisting. With `metric` set, validates
+  against that metric's primary cube and returns a flat error list.
+  Without `metric`, runs against every registered cube and returns
+  per-metric errors so the FE builder can show "valid for MRR but not
+  Retention" feedback.
+}

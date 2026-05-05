@@ -1,0 +1,26 @@
+meta {
+  name: Logo churn
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/churn?start={{start}}&end={{end}}&type=logo
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  type: logo
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Customer-count churn over the window. `type` is `logo` (default) or
+  `revenue`. Same `dimensions=`/`filter=`/`segment=` params apply.
+}

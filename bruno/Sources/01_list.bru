@@ -1,0 +1,20 @@
+meta {
+  name: List sources
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/sources
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Returns every registered connector source with `id`, `type`, `name`,
+  `last_synced_at`. The bootstrap inserts a `stripe` row automatically.
+}

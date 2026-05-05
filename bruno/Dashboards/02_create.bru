@@ -1,0 +1,27 @@
+meta {
+  name: Create dashboard
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/dashboards
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "Growth overview",
+    "description": "Topline KPIs + waterfall + cohorts"
+  }
+}
+
+docs {
+  Creates an empty dashboard. Add sections + charts via the next
+  requests; `GET /dashboards/{id}` returns the assembled tree.
+}

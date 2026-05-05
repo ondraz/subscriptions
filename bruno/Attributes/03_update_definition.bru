@@ -1,0 +1,31 @@
+meta {
+  name: Update attribute definition
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/api/attributes/:key
+  body: json
+  auth: bearer
+}
+
+params:path {
+  key: tier
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "label": "Subscription tier",
+    "description": "Pricing tier from CRM"
+  }
+}
+
+docs {
+  Only `label` and `description` are mutable — type is immutable to keep
+  the EAV cast safe.
+}

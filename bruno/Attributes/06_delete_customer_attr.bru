@@ -1,0 +1,20 @@
+meta {
+  name: Delete one customer attribute
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/api/customers/:customerId/attributes/:key
+  body: none
+  auth: bearer
+}
+
+params:path {
+  customerId: {{customerId}}
+  key: tier
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}

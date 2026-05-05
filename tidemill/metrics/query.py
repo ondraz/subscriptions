@@ -359,14 +359,16 @@ class QueryFragment:
             seg_col = seg_tbl.c.segment_id
             stmt = stmt.add_columns(seg_col.label("segment_id")).group_by(seg_col)
 
-        # 4. Time grain (before dimensions so period comes first in SELECT)
+        # 4. Time grain (before dimensions so period comes first in SELECT).
+        # ORDER BY period ASC so callers always receive series rows in
+        # chronological order — every series-producing endpoint inherits this.
         if self.time_grain:
             tg = self.time_grain
             trunc: Label[Any] = func.date_trunc(
                 literal_column(f"'{tg.granularity}'"),
                 literal_column(tg.column),
             ).label("period")
-            stmt = stmt.add_columns(trunc).group_by(trunc)
+            stmt = stmt.add_columns(trunc).group_by(trunc).order_by(trunc)
 
         # 5. Dimensions — SELECT + GROUP BY
         for d in self.dimensions:

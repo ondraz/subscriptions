@@ -1,0 +1,31 @@
+meta {
+  name: Create source
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/sources
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "type": "stripe",
+    "name": "Acme Stripe (live)",
+    "config": {
+      "api_key_env": "STRIPE_API_KEY",
+      "webhook_secret_env": "STRIPE_WEBHOOK_SECRET"
+    }
+  }
+}
+
+docs {
+  Registers an additional connector source — useful when you ingest from
+  multiple Stripe accounts side-by-side. Returns the new `id` (UUID).
+}

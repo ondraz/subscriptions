@@ -1,0 +1,25 @@
+meta {
+  name: Cohort LTV
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/ltv/cohort?start={{start}}&end={{end}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Cumulative revenue per signup cohort over months-since-signup. Better
+  than `simple` once you have ≥12 months of signups to compare.
+}

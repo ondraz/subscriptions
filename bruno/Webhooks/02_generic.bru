@@ -1,0 +1,33 @@
+meta {
+  name: Generic webhook (any source)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/webhooks/:sourceType
+  body: json
+  auth: none
+}
+
+params:path {
+  sourceType: stripe
+}
+
+params:query {
+  source_id: {{sourceId}}
+}
+
+headers {
+  X-Webhook-Signature:
+}
+
+body:json {
+  {}
+}
+
+docs {
+  Catch-all dispatcher used by connectors that don't ship a custom route.
+  The `source_id` query param picks which `connector_source` row owns the
+  event; defaults to the source-type string.
+}

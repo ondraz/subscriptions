@@ -1,0 +1,31 @@
+meta {
+  name: Create section
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/dashboards/:dashboardId/sections
+  body: json
+  auth: bearer
+}
+
+params:path {
+  dashboardId: {{dashboardId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "title": "Revenue",
+    "position": 0
+  }
+}
+
+docs {
+  Sections group charts on a dashboard. `position` controls render order;
+  re-pack via `PUT` if you reorder.
+}

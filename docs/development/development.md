@@ -125,6 +125,22 @@ uv run uvicorn tidemill.api.app:app --port 8000 --reload
 
 Set `AUTH_ENABLED=false` for local development without Clerk. See [Authentication](#authentication) below to enable it.
 
+### Exploring the API
+
+Once the API is running, three options for poking at it:
+
+- **Swagger UI** at [http://localhost:8000/docs](http://localhost:8000/docs) — auto-generated from FastAPI, shows every parameter and lets you fire requests directly.
+- **Bruno collection** at [`bruno/`](../../bruno/) — a folder of runnable example requests covering every endpoint (metrics, segments, attributes, dashboards, sources, webhooks). Open the folder in the Bruno desktop app, or run from the CLI:
+
+  ```bash
+  npm i -g @usebruno/cli
+  cd bruno
+  bru run --env Local "Metrics - MRR/02_series.bru"
+  ```
+
+  The `Local` environment defaults to `http://localhost:8000` and leaves `apiKey` blank (matches `AUTH_ENABLED=false`). See `bruno/README.md` for the full layout.
+- **CLI** — `tidemill mrr`, `tidemill churn`, etc. (see [api.md](../architecture/api.md#cli-p0)).
+
 ## Running the Frontend
 
 ```bash

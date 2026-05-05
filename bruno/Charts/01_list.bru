@@ -1,0 +1,21 @@
+meta {
+  name: List saved charts
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/charts
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  The chart "library" — every saved chart owned by the current user.
+  Each row carries its full `config` JSON (metric + params + display
+  options); the FE knows how to render it.
+}

@@ -1,0 +1,40 @@
+meta {
+  name: Update segment
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/segments/:segmentId
+  body: json
+  auth: bearer
+}
+
+params:path {
+  segmentId: {{segmentId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "Enterprise US (revised)",
+    "definition": {
+      "version": 1,
+      "root": {
+        "op": "and",
+        "conditions": [
+          {"field": "customer.country", "op": "=", "value": "US"},
+          {"field": "attr.tier", "op": "=", "value": "enterprise"}
+        ]
+      }
+    }
+  }
+}
+
+docs {
+  Partial update — any of `name`, `description`, `definition` may be
+  omitted.
+}

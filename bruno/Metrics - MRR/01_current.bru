@@ -1,0 +1,21 @@
+meta {
+  name: MRR — current snapshot
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/mrr
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  No params → today's MRR. Add `at=YYYY-MM-DD` to snapshot at a specific
+  end-of-day; add both `start` and `end` to switch into series mode (see
+  `02_series.bru`).
+}

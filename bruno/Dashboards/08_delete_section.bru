@@ -1,0 +1,20 @@
+meta {
+  name: Delete section
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/api/dashboards/:dashboardId/sections/:sectionId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  dashboardId: {{dashboardId}}
+  sectionId: {{sectionId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}

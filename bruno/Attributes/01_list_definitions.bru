@@ -1,0 +1,21 @@
+meta {
+  name: List attribute definitions
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/attributes
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Every attribute key the workspace knows about, with type
+  (`string|number|boolean|timestamp`), source (`stripe|csv|api|computed`)
+  and optional human label / description.
+}

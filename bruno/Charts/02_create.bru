@@ -1,0 +1,46 @@
+meta {
+  name: Create saved chart
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/charts
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "MRR by country (12mo)",
+    "config": {
+      "metric": "mrr",
+      "query": {
+        "query_type": "series",
+        "start": "{{start}}",
+        "end": "{{end}}",
+        "interval": "month"
+      },
+      "spec": {
+        "dimensions": ["customer_country"],
+        "filters": {"currency": "usd"}
+      },
+      "display": {
+        "type": "stacked-area",
+        "title": "MRR by country",
+        "y_format": "money"
+      }
+    }
+  }
+}
+
+docs {
+  `config` is opaque to the backend — the FE owns the schema. By
+  convention it carries `metric`, the `query` payload (matches the
+  metric's params), the optional `spec` (dimensions/filters), and a
+  `display` block. Save the returned `id` into `savedChartId`.
+}

@@ -1,0 +1,16 @@
+meta {
+  name: Readiness probe
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/readyz
+  body: none
+  auth: none
+}
+
+docs {
+  Pings the database with `SELECT 1`. Returns `status: ok` when the DB is
+  reachable, `degraded` otherwise.
+}

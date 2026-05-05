@@ -1,0 +1,21 @@
+meta {
+  name: List API keys
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/keys
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  ⚠ Requires a Clerk JWT — `Bearer tk_…` is rejected here on purpose so a
+  leaked API key cannot mint more keys. With auth disabled, this works
+  unauthenticated.
+}

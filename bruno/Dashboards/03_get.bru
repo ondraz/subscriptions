@@ -1,0 +1,25 @@
+meta {
+  name: Get dashboard (with sections + charts)
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/dashboards/:dashboardId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  dashboardId: {{dashboardId}}
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Returns the dashboard, its sections (sorted by `position`), and each
+  section's charts with the embedded `saved_chart.config`. Single round
+  trip — no need to fan out to `/charts` from the FE.
+}

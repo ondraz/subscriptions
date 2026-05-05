@@ -1,0 +1,30 @@
+meta {
+  name: Create attribute definition
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/attributes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "key": "tier",
+    "label": "Plan tier",
+    "type": "string",
+    "description": "free | growth | enterprise"
+  }
+}
+
+docs {
+  Pin the type explicitly when you don't want type inference to surprise
+  you on the first ingest. First write wins for type — once set, update
+  via `PUT` only changes the human metadata.
+}

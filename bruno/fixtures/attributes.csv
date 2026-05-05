@@ -1,0 +1,3 @@
+customer_id,tier,mrr_target_cents,is_design_partner,onboarded_at
+00000000-0000-0000-0000-000000000001,enterprise,250000,true,2026-02-15
+00000000-0000-0000-0000-000000000002,growth,80000,false,2026-03-02

@@ -1,0 +1,27 @@
+meta {
+  name: Create API key
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/keys
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+body:json {
+  {
+    "name": "Local notebook"
+  }
+}
+
+docs {
+  Mints a new API key. The full `tk_…` value is only returned in this
+  response — copy it into the `apiKey` env var. Subsequent reads only
+  return the prefix.
+}

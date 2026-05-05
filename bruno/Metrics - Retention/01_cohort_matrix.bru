@@ -1,0 +1,26 @@
+meta {
+  name: Cohort retention matrix
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/retention?start={{start}}&end={{end}}&query_type=cohort_matrix
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  query_type: cohort_matrix
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Classic triangle: rows are signup cohorts, columns are months-since-
+  signup, values are the share still active. Default `query_type`.
+}

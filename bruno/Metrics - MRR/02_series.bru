@@ -1,0 +1,26 @@
+meta {
+  name: MRR — time series
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/mrr?start={{start}}&end={{end}}&interval=month
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  interval: month
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Bucketed time series. `interval` accepts `day | week | month | quarter |
+  year`. Date ranges are closed-closed and inclusive of the last day.
+}

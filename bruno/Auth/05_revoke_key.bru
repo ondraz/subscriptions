@@ -1,0 +1,24 @@
+meta {
+  name: Revoke API key
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/api/keys/:keyId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  keyId: replace-with-key-uuid
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Sets `revoked_at`; the key keeps existing rows but stops authenticating.
+  Same Clerk-only restriction as the other key-management endpoints.
+}

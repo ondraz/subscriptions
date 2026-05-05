@@ -1,0 +1,26 @@
+meta {
+  name: Remove chart from dashboard
+  type: http
+  seq: 10
+}
+
+delete {
+  url: {{baseUrl}}/api/dashboards/:dashboardId/charts/:chartId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  dashboardId: {{dashboardId}}
+  chartId: replace-with-dashboard-chart-id
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  `chartId` is the `dashboard_chart` row id (returned by `09_add_chart`),
+  not the `saved_chart_id`. Removing here only detaches — the saved
+  chart itself still exists in the library.
+}
