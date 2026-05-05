@@ -363,6 +363,47 @@ class TestSubscriptionTranslation:
         assert events[0].type == "subscription.churned"
         assert events[0].payload["prev_mrr_cents"] == 5000
 
+    def test_deleted_mid_trial_emits_trial_expired(self, connector: StripeConnector):
+        """Mid-trial deletion still emits a trial_expired event.
+
+        Stripe can fire `customer.subscription.deleted` directly on a
+        mid-trial cancellation (no preceding ``trialing → canceled`` update).
+        The handler must still close out the trial cohort.
+        """
+        wh = _sub_wh("customer.subscription.deleted", status="canceled")
+        wh["data"]["object"]["trial_start"] = 1700000000
+        wh["data"]["object"]["trial_end"] = 1702000000
+        wh["data"]["object"]["ended_at"] = 1701000000  # before trial_end
+        events = connector.translate(wh)
+        types = {e.type for e in events}
+        assert types == {"subscription.churned", "subscription.trial_expired"}
+
+    def test_deleted_after_trial_no_trial_expired(self, connector: StripeConnector):
+        """Post-trial deletion does not emit trial_expired.
+
+        Deletion after trial converted (ended_at >= trial_end) is just a
+        churn — not a trial expiry.
+        """
+        wh = _sub_wh("customer.subscription.deleted", status="canceled")
+        wh["data"]["object"]["trial_start"] = 1700000000
+        wh["data"]["object"]["trial_end"] = 1702000000
+        wh["data"]["object"]["ended_at"] = 1703000000  # after trial_end
+        events = connector.translate(wh)
+        assert [e.type for e in events] == ["subscription.churned"]
+
+    def test_deleted_while_trialing_emits_trial_expired(self, connector: StripeConnector):
+        """Deletion while still trialing emits trial_expired.
+
+        If the deleted webhook still reports ``status=trialing`` (no
+        ``ended_at`` reached us), trust the status as the signal.
+        """
+        wh = _sub_wh("customer.subscription.deleted", status="trialing")
+        wh["data"]["object"]["trial_start"] = 1700000000
+        wh["data"]["object"]["trial_end"] = 1702000000
+        events = connector.translate(wh)
+        types = {e.type for e in events}
+        assert types == {"subscription.churned", "subscription.trial_expired"}
+
 
 # ── Timestamp attribution (_sub_occurred) ──────────────────────────────────
 

@@ -449,12 +449,14 @@ class StripeConnector(WebhookConnector):
 
     def _translate_subscription_deleted(self, wh: dict[str, Any]) -> list[Event]:
         sub = wh["data"]["object"]
-        return [
+        cust_id = sub["customer"]
+        occurred = self._sub_occurred(sub, wh)
+        events: list[Event] = [
             self._make_event(
                 "subscription.churned",
-                customer_id=sub["customer"],
+                customer_id=cust_id,
                 external_id=sub["id"],
-                occurred_at=self._sub_occurred(sub, wh),
+                occurred_at=occurred,
                 payload={
                     "external_id": sub["id"],
                     "prev_mrr_cents": self._compute_mrr(sub),
@@ -462,6 +464,27 @@ class StripeConnector(WebhookConnector):
                 },
             )
         ]
+
+        # Stripe may send `customer.subscription.deleted` directly without a
+        # preceding `trialing → canceled` update (e.g. customer cancels via
+        # the portal mid-trial). Mirror the backfill rule from
+        # `_backfill_trial_events`: deletion before `trial_end` is a trial
+        # expiry, so the cohort funnel records a terminal outcome.
+        trial_end = sub.get("trial_end")
+        ended_at = sub.get("ended_at")
+        canceled_in_trial = trial_end is not None and ended_at is not None and ended_at < trial_end
+        if sub.get("status") == "trialing" or canceled_in_trial:
+            events.append(
+                self._make_event(
+                    "subscription.trial_expired",
+                    customer_id=cust_id,
+                    external_id=sub["id"],
+                    occurred_at=occurred,
+                    payload={"external_id": sub["id"]},
+                )
+            )
+
+        return events
 
     # ── invoice handlers ─────────────────────────────────────────────────
 
