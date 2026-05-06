@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,31 @@ from tidemill.metrics.base import Metric, QuerySpec
 from tidemill.metrics.mrr.cubes import MRRMovementCube, MRRSnapshotCube
 from tidemill.metrics.registry import register
 from tidemill.segments.compiler import build_spec_fragment
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_currency(event: Event, kind: str) -> str:
+    """Read currency from an event payload, defaulting to USD with a warning.
+
+    Why: silently defaulting to USD lets a translator regression corrupt
+    metric tables for non-USD subscribers. We still fall back so a single
+    bad event doesn't crash the consumer, but the warning surfaces the gap.
+    """
+    cur = event.payload.get("currency")
+    if cur:
+        return cur.upper()
+    logger.warning(
+        "%s event missing currency, defaulting to USD",
+        kind,
+        extra={
+            "event_id": event.id,
+            "event_type": event.type,
+            "source_id": event.source_id,
+        },
+    )
+    return "USD"
+
 
 if TYPE_CHECKING:
     from datetime import date
@@ -79,7 +105,7 @@ class MrrMetric(Metric):
                 # subscription.activated so we don't double-count
                 # trials that later convert.
                 mrr = p.get("mrr_cents", 0)
-                currency = p.get("currency", "USD") or "USD"
+                currency = _resolve_currency(event, "MRR")
                 mrr_base = await to_base_cents(mrr, currency, event.occurred_at.date(), self.db)
                 await self._upsert_snapshot(
                     event,
@@ -91,7 +117,7 @@ class MrrMetric(Metric):
 
             case "subscription.activated":
                 mrr = p.get("mrr_cents", 0)
-                currency = p.get("currency", "USD") or "USD"
+                currency = _resolve_currency(event, "MRR")
                 mrr_base = await to_base_cents(mrr, currency, event.occurred_at.date(), self.db)
                 movement_type = await self._classify_activation(event)
                 await self._upsert_snapshot(
@@ -113,7 +139,7 @@ class MrrMetric(Metric):
             case "subscription.changed":
                 prev_mrr = p.get("prev_mrr_cents", 0)
                 new_mrr = p.get("new_mrr_cents", 0)
-                currency = p.get("currency", "USD") or "USD"
+                currency = _resolve_currency(event, "MRR")
                 new_mrr_base = await to_base_cents(
                     new_mrr, currency, event.occurred_at.date(), self.db
                 )
@@ -140,7 +166,7 @@ class MrrMetric(Metric):
 
             case "subscription.churned" | "subscription.paused":
                 prev_mrr = p.get("prev_mrr_cents", 0) or p.get("mrr_cents", 0)
-                currency = p.get("currency", "USD") or "USD"
+                currency = _resolve_currency(event, "MRR")
                 prev_mrr_base = await to_base_cents(
                     prev_mrr, currency, event.occurred_at.date(), self.db
                 )
@@ -156,7 +182,7 @@ class MrrMetric(Metric):
 
             case "subscription.reactivated" | "subscription.resumed":
                 mrr = p.get("mrr_cents", 0)
-                currency = p.get("currency", "USD") or "USD"
+                currency = _resolve_currency(event, "MRR")
                 mrr_base = await to_base_cents(mrr, currency, event.occurred_at.date(), self.db)
                 await self._upsert_snapshot(
                     event,
@@ -219,6 +245,7 @@ class MrrMetric(Metric):
                 " ON CONFLICT ON CONSTRAINT uq_mrr_snapshot_sub DO UPDATE SET"
                 "  mrr_cents = EXCLUDED.mrr_cents,"
                 "  mrr_base_cents = EXCLUDED.mrr_base_cents,"
+                "  currency = EXCLUDED.currency,"
                 "  snapshot_at = EXCLUDED.snapshot_at"
             ),
             {
@@ -228,7 +255,7 @@ class MrrMetric(Metric):
                 "sid": subscription_ext_id,
                 "mrr": mrr_cents,
                 "mrrb": mrr_base_cents,
-                "cur": currency,
+                "cur": currency.upper(),
                 "at": event.occurred_at,
             },
         )
@@ -259,7 +286,7 @@ class MrrMetric(Metric):
                 "mt": movement_type,
                 "amt": amount_cents,
                 "amtb": amount_base_cents,
-                "cur": currency,
+                "cur": currency.upper(),
                 "at": event.occurred_at,
             },
         )
@@ -285,6 +312,20 @@ class MrrMetric(Metric):
                     spec,
                 )
             case "arr":
+                if params.get("start") and params.get("end"):
+                    series = await self._mrr_series(
+                        params["start"],
+                        params["end"],
+                        params.get("interval", "month"),
+                        spec,
+                    )
+                    return [
+                        {
+                            **{k: v for k, v in row.items() if k != "amount_base"},
+                            "arr": float(row.get("amount_base") or 0) * 12,
+                        }
+                        for row in series
+                    ]
                 mrr = await self._current_mrr(params.get("at"), spec)
                 if isinstance(mrr, list):
                     return [{**row, "arr": row.get("mrr", 0) * 12} for row in mrr]

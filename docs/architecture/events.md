@@ -142,3 +142,39 @@ CREATE INDEX ix_event_log_customer ON event_log(customer_id, occurred_at);
 ```
 
 When Kafka retention expires, or when bootstrapping a new deployment, the `event_log` table is the replay source.
+
+## Dead-Letter Handling
+
+Whenever a consumer's `handle_event` raises, the event is recorded in the
+`dead_letter_event` table (one row per `(event_id, consumer)` pair) and
+mirrored to the Kafka DLQ topic. The offset is then committed so the
+worker keeps making progress instead of getting stuck on the bad event.
+
+The most common case is `FxRateMissingError` — an MRR / LTV event whose
+currency has no `fx_rate` row yet. Once you backfill the rate:
+
+```bash
+tidemill dlq-list --error-type fx_rate_missing      # confirm what's queued
+tidemill dlq-replay --error-type fx_rate_missing    # republish to Kafka
+```
+
+The worker reprocesses the events normally; on success the consumer
+sets `dead_letter_event.resolved_at` so the rows drop out of the
+default `dlq-list` view.
+
+```sql
+CREATE TABLE dead_letter_event (
+    id               TEXT PRIMARY KEY,
+    event_id         TEXT NOT NULL,
+    source_id        TEXT NOT NULL,
+    event_type       TEXT NOT NULL,
+    consumer         TEXT NOT NULL,        -- 'state', 'metric:mrr', …
+    error_type       TEXT NOT NULL,        -- 'fx_rate_missing', 'unknown', …
+    error_message    TEXT NOT NULL,
+    payload          JSONB NOT NULL,
+    occurred_at      TIMESTAMPTZ NOT NULL,
+    dead_lettered_at TIMESTAMPTZ NOT NULL,
+    resolved_at      TIMESTAMPTZ,
+    UNIQUE (event_id, consumer)
+);
+```

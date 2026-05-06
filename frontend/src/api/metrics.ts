@@ -1,4 +1,5 @@
 import { get } from './client'
+import { normalizeFilterValue } from '@/lib/filters'
 import type { Interval } from '@/lib/types'
 
 export interface MetricParams {
@@ -29,7 +30,7 @@ function buildQuery(params: MetricParams): string {
   params.compare_segments?.forEach((s) => sp.append('compare_segments', s))
   if (params.filters) {
     for (const [k, v] of Object.entries(params.filters)) {
-      sp.append('filter', `${k}:${v}`)
+      sp.append('filter', `${k}=${normalizeFilterValue(k, v)}`)
     }
   }
   const qs = sp.toString()

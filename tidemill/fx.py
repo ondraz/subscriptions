@@ -12,6 +12,34 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
+def normalize_currency(currency: str | None) -> str | None:
+    """Return *currency* in the project's canonical form (uppercase ISO 4217).
+
+    Stripe emits lowercase three-letter codes; we store and compare uppercase
+    everywhere so filters like ``filter=currency=USD`` always match. ``None``
+    and empty strings pass through unchanged so columns that allow NULL stay
+    NULL.
+    """
+    if not currency:
+        return currency
+    return currency.upper()
+
+
+class FxRateMissingError(ValueError):
+    """No ``fx_rate`` row exists for this currency pair on or before *on_date*.
+
+    Worker consumers catch this specifically and dead-letter the event so
+    it can be replayed once the missing rate is backfilled. Subclasses
+    :class:`ValueError` for backwards compatibility.
+    """
+
+    def __init__(self, currency: str, base_currency: str, on_date: date) -> None:
+        super().__init__(f"No FX rate for {currency}/{base_currency} on or before {on_date}")
+        self.currency = currency
+        self.base_currency = base_currency
+        self.on_date = on_date
+
+
 async def to_base_cents(
     amount_cents: int,
     currency: str,
@@ -21,7 +49,8 @@ async def to_base_cents(
 ) -> int:
     """Convert *amount_cents* to *base_currency* using the fx_rate table.
 
-    Same-currency is a passthrough (no DB query).
+    Same-currency is a passthrough (no DB query). Raises
+    :class:`FxRateMissingError` when no rate row applies.
     """
     if currency.upper() == base_currency.upper():
         return amount_cents
@@ -36,5 +65,5 @@ async def to_base_cents(
     )
     rate = result.scalar()
     if rate is None:
-        raise ValueError(f"No FX rate for {currency}/{base_currency} on or before {on_date}")
+        raise FxRateMissingError(currency.upper(), base_currency.upper(), on_date)
     return int(amount_cents * rate)

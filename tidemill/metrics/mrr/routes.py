@@ -54,6 +54,13 @@ async def get_mrr_waterfall(
 @router.get("/metrics/arr")
 async def get_arr(
     at: date | None = None,
+    start: date | None = None,
+    end: date | None = None,
+    interval: str = "month",
     spec: QuerySpec | None = Depends(parse_spec),
 ) -> Any:
-    return await query_metric("mrr", {"query_type": "arr", "at": at}, spec)
+    if start and end:
+        params = {"query_type": "arr", "start": start, "end": end, "interval": interval}
+    else:
+        params = {"query_type": "arr", "at": at}
+    return await query_metric("mrr", params, spec)

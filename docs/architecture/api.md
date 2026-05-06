@@ -96,7 +96,7 @@ cohorts = await engine.query("retention", {"query_type": "cohort_matrix",
 # With dimensions and filters via QuerySpec
 spec = QuerySpec(
     dimensions=["customer_country"],
-    filters={"currency": "usd"},
+    filters={"currency": "USD"},
 )
 mrr_by_country = await engine.query("mrr", {"query_type": "current"}, spec=spec)
 
@@ -165,7 +165,7 @@ async def get_mrr(
 | `GET` | `/api/metrics` | List of registered metric names |
 | `GET` | `/api/metrics/summary` | MRR, ARR, churn, retention, LTV, ARPU, trial conversion in one call |
 | `GET` | `/api/metrics/mrr` | MRR (point or series) |
-| `GET` | `/api/metrics/arr` | ARR (point) |
+| `GET` | `/api/metrics/arr` | ARR (point or series — same `start`/`end`/`interval` contract as MRR) |
 | `GET` | `/api/metrics/mrr/breakdown` | Net new MRR breakdown by movement type |
 | `GET` | `/api/metrics/mrr/waterfall` | Monthly MRR waterfall (movements per month) |
 | `GET` | `/api/metrics/churn` | Churn rate (`type=logo` or `type=revenue`) |
@@ -196,7 +196,7 @@ All metric endpoints share a common `QuerySpec` contract built from three query-
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `dimensions` | `string[]` | GROUP BY dimensions — names declared in the metric's Cube (e.g. `customer_country`, `currency`, `churn_type`, `cancel_reason`) |
-| `filter` | `string[]` | Repeated `key=value` filters, e.g. `filter=customer_country=US&filter=currency=usd` |
+| `filter` | `string[]` | Repeated `key=value` filters, e.g. `filter=customer_country=US&filter=currency=USD` |
 | `granularity` | `string` | Time bucketing for series queries — `day`, `week`, `month`, `quarter`, or `year` |
 
 Invalid dimension/filter names raise a `400` with the list of available options for that metric's cube. Dimensions that reach through the `plan` / `product` joins (`plan_interval`, `plan_name`, `product_name`, `billing_scheme`, `collection_method`) are declared on the MRR cubes but will return no rows until the Stripe connector ingests `plan.*` / `product.*` events (see `docs/architecture/connectors.md`).

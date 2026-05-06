@@ -216,6 +216,11 @@ class StripeConnector(WebhookConnector):
                 occurred_at=self._occurred(cust),
                 payload={
                     "external_id": cust["id"],
+                    "name": cust.get("name"),
+                    "email": cust.get("email"),
+                    "currency": cust.get("currency"),
+                    "country": (cust.get("address") or {}).get("country"),
+                    "metadata": cust.get("metadata", {}),
                     "changed_fields": prev,
                 },
             )
@@ -273,6 +278,7 @@ class StripeConnector(WebhookConnector):
                     payload={
                         "external_id": sub["id"],
                         "mrr_cents": self._compute_mrr(sub),
+                        "currency": sub.get("currency"),
                     },
                 )
             )
@@ -313,7 +319,11 @@ class StripeConnector(WebhookConnector):
                         customer_id=cust_id,
                         external_id=sub["id"],
                         occurred_at=occurred,
-                        payload={"external_id": sub["id"], "mrr_cents": mrr},
+                        payload={
+                            "external_id": sub["id"],
+                            "mrr_cents": mrr,
+                            "currency": sub.get("currency"),
+                        },
                     )
                 )
                 events.append(
@@ -322,7 +332,11 @@ class StripeConnector(WebhookConnector):
                         customer_id=cust_id,
                         external_id=sub["id"],
                         occurred_at=occurred,
-                        payload={"external_id": sub["id"], "mrr_cents": mrr},
+                        payload={
+                            "external_id": sub["id"],
+                            "mrr_cents": mrr,
+                            "currency": sub.get("currency"),
+                        },
                     )
                 )
             elif old_status == "trialing" and new_status in (
@@ -346,7 +360,11 @@ class StripeConnector(WebhookConnector):
                         customer_id=cust_id,
                         external_id=sub["id"],
                         occurred_at=occurred,
-                        payload={"external_id": sub["id"], "mrr_cents": mrr},
+                        payload={
+                            "external_id": sub["id"],
+                            "mrr_cents": mrr,
+                            "currency": sub.get("currency"),
+                        },
                     )
                 )
             elif new_status == "canceled":
@@ -359,6 +377,7 @@ class StripeConnector(WebhookConnector):
                         payload={
                             "external_id": sub["id"],
                             "mrr_cents": mrr,
+                            "currency": sub.get("currency"),
                             "canceled_at": _ts(sub.get("canceled_at")),
                             "ends_at": _ts(sub.get("current_period_end")),
                             "cancel_reason": (sub.get("cancellation_details") or {}).get(
@@ -374,7 +393,11 @@ class StripeConnector(WebhookConnector):
                         customer_id=cust_id,
                         external_id=sub["id"],
                         occurred_at=occurred,
-                        payload={"external_id": sub["id"], "mrr_cents": mrr},
+                        payload={
+                            "external_id": sub["id"],
+                            "mrr_cents": mrr,
+                            "currency": sub.get("currency"),
+                        },
                     )
                 )
             elif new_status in ("incomplete_expired", "unpaid"):
@@ -387,6 +410,7 @@ class StripeConnector(WebhookConnector):
                         payload={
                             "external_id": sub["id"],
                             "prev_mrr_cents": mrr,
+                            "currency": sub.get("currency"),
                         },
                     )
                 )
@@ -399,7 +423,11 @@ class StripeConnector(WebhookConnector):
                     customer_id=cust_id,
                     external_id=sub["id"],
                     occurred_at=occurred,
-                    payload={"external_id": sub["id"], "mrr_cents": mrr},
+                    payload={
+                        "external_id": sub["id"],
+                        "mrr_cents": mrr,
+                        "currency": sub.get("currency"),
+                    },
                 )
             )
 
@@ -414,6 +442,7 @@ class StripeConnector(WebhookConnector):
                     payload={
                         "external_id": sub["id"],
                         "mrr_cents": mrr,
+                        "currency": sub.get("currency"),
                         "canceled_at": _ts(sub.get("canceled_at")),
                         "ends_at": _ts(sub.get("current_period_end")),
                         "cancel_reason": (sub.get("cancellation_details") or {}).get("feedback"),
@@ -441,6 +470,7 @@ class StripeConnector(WebhookConnector):
                             "new_mrr_cents": new_mrr,
                             "prev_quantity": self._total_quantity(prev_sub),
                             "new_quantity": self._total_quantity(sub),
+                            "currency": sub.get("currency"),
                         },
                     )
                 )
@@ -460,6 +490,7 @@ class StripeConnector(WebhookConnector):
                 payload={
                     "external_id": sub["id"],
                     "prev_mrr_cents": self._compute_mrr(sub),
+                    "currency": sub.get("currency"),
                     "cancel_reason": (sub.get("cancellation_details") or {}).get("feedback"),
                 },
             )
@@ -534,6 +565,7 @@ class StripeConnector(WebhookConnector):
                     "external_id": inv["id"],
                     "paid_at": _ts(inv.get("status_transitions", {}).get("paid_at")),
                     "amount_cents": inv.get("amount_paid", 0),
+                    "currency": inv.get("currency"),
                 },
             )
         ]
@@ -600,6 +632,7 @@ class StripeConnector(WebhookConnector):
                     "invoice_external_id": pi.get("invoice"),
                     "customer_external_id": pi.get("customer"),
                     "amount_cents": pi.get("amount", 0),
+                    "currency": pi.get("currency"),
                     "failure_reason": last_error.get("message"),
                     "attempt_count": pi.get("metadata", {}).get("attempt_count"),
                 },
@@ -705,7 +738,11 @@ class StripeConnector(WebhookConnector):
                         customer_id=customer_id,
                         external_id=str(sub.id),
                         occurred_at=occurred,
-                        payload={"external_id": sub.id, "mrr_cents": mrr},
+                        payload={
+                            "external_id": sub.id,
+                            "mrr_cents": mrr,
+                            "currency": sub_dict.get("currency"),
+                        },
                     )
                 elif sub.status in ("canceled", "incomplete_expired", "unpaid"):
                     yield self._make_event(
@@ -713,7 +750,11 @@ class StripeConnector(WebhookConnector):
                         customer_id=customer_id,
                         external_id=str(sub.id),
                         occurred_at=occurred,
-                        payload={"external_id": sub.id, "prev_mrr_cents": mrr},
+                        payload={
+                            "external_id": sub.id,
+                            "prev_mrr_cents": mrr,
+                            "currency": sub_dict.get("currency"),
+                        },
                     )
 
                 for trial_event in self._backfill_trial_events(sub_dict, customer_id, mrr):
@@ -756,6 +797,7 @@ class StripeConnector(WebhookConnector):
                         "external_id": inv.id,
                         "paid_at": _ts(paid_at),
                         "amount_cents": inv.amount_paid or 0,
+                        "currency": inv.currency,
                     },
                 )
 

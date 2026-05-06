@@ -103,6 +103,29 @@ event_log = Table(
     Column("payload", Text, nullable=False),
 )
 
+# Per-consumer dead-letter table.  Worker tasks insert one row whenever
+# ``handle_event`` raises — keeps the failed event payload around so it
+# can be replayed once the underlying issue (e.g. a missing fx_rate row)
+# is resolved.  ``(event_id, consumer)`` is unique so each metric stream
+# tracks its own failures independently.
+dead_letter_event = Table(
+    "dead_letter_event",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("event_id", Text, nullable=False),
+    Column("source_id", Text, nullable=False),
+    Column("event_type", Text, nullable=False),
+    Column("consumer", Text, nullable=False),
+    Column("error_type", Text, nullable=False),
+    Column("error_message", Text, nullable=False),
+    Column("payload", Text, nullable=False),
+    Column("occurred_at", DateTime(timezone=True), nullable=False),
+    Column("dead_lettered_at", DateTime(timezone=True), nullable=False),
+    Column("resolved_at", DateTime(timezone=True)),
+    UniqueConstraint("event_id", "consumer", name="uq_dlq_event_consumer"),
+    Index("ix_dlq_unresolved", "consumer", "error_type", "resolved_at"),
+)
+
 fx_rate = Table(
     "fx_rate",
     metadata,

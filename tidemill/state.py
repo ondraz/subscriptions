@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 
+from tidemill.fx import normalize_currency
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,7 +83,7 @@ async def _handle_customer(session: AsyncSession, event: Event) -> None:
                     "name": p.get("name"),
                     "email": p.get("email"),
                     "country": p.get("country"),
-                    "currency": p.get("currency"),
+                    "currency": normalize_currency(p.get("currency")),
                     "meta": json.dumps(p.get("metadata", {})),
                     "now": event.occurred_at,
                 },
@@ -160,7 +162,7 @@ async def _handle_subscription(session: AsyncSession, event: Event) -> None:
                     "plan_eid": p.get("plan_external_id", ""),
                     "status": p.get("status", "active"),
                     "mrr": p.get("mrr_cents", 0),
-                    "currency": p.get("currency"),
+                    "currency": normalize_currency(p.get("currency")),
                     "qty": p.get("quantity", 1),
                     "started": _parse_ts(p.get("started_at")),
                     "ts": _parse_ts(p.get("trial_start")),
@@ -283,7 +285,7 @@ async def _handle_invoice(session: AsyncSession, event: Event) -> None:
                     "cust_eid": p.get("customer_external_id", event.customer_id),
                     "sub_eid": p.get("subscription_external_id", ""),
                     "status": p.get("status"),
-                    "cur": p.get("currency"),
+                    "cur": normalize_currency(p.get("currency")),
                     "sub_cents": p.get("subtotal_cents", 0),
                     "tax": p.get("tax_cents", 0),
                     "total": p.get("total_cents", 0),
@@ -356,7 +358,7 @@ async def _handle_payment(session: AsyncSession, event: Event) -> None:
                     "inv_eid": p.get("invoice_external_id", ""),
                     "cust_eid": p.get("customer_external_id", event.customer_id),
                     "amount": p.get("amount_cents", 0),
-                    "cur": p.get("currency"),
+                    "cur": normalize_currency(p.get("currency")),
                     "pmt": p.get("payment_method_type"),
                     "now": event.occurred_at,
                 },
@@ -387,7 +389,7 @@ async def _handle_payment(session: AsyncSession, event: Event) -> None:
                     "inv_eid": p.get("invoice_external_id", ""),
                     "cust_eid": p.get("customer_external_id", event.customer_id),
                     "amount": p.get("amount_cents", 0),
-                    "cur": p.get("currency"),
+                    "cur": normalize_currency(p.get("currency")),
                     "reason": p.get("failure_reason"),
                     "attempts": p.get("attempt_count"),
                     "now": event.occurred_at,

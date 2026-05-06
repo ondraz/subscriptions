@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Condition, Group, SegmentDef, SegmentOp } from '@/api/segments'
 import { useFields } from '@/hooks/useFields'
+import { normalizeFilterValue } from '@/lib/filters'
 
 const OPS_BY_TYPE: Record<string, SegmentOp[]> = {
   string: ['=', '!=', 'in', 'not in', 'contains', 'not_contains', 'starts_with', 'ends_with', 'is_empty', 'is_not_empty'],
@@ -152,7 +153,10 @@ function ConditionEditor({ cond, fields, onChange }: ConditionEditorProps) {
     <div className="flex items-center gap-1 flex-wrap flex-1">
       <select
         value={cond.field}
-        onChange={(e) => onChange({ ...cond, field: e.target.value })}
+        onChange={(e) => {
+          const field = e.target.value
+          onChange({ ...cond, field, value: normalizeFilterValue(field, cond.value) })
+        }}
         className="px-2 py-0.5 border border-border rounded bg-background text-xs"
       >
         {fields.map((f) => (
@@ -177,7 +181,7 @@ function ConditionEditor({ cond, fields, onChange }: ConditionEditorProps) {
           op={cond.op}
           value={cond.value}
           type={fieldType}
-          onChange={(v) => onChange({ ...cond, value: v })}
+          onChange={(v) => onChange({ ...cond, value: normalizeFilterValue(cond.field, v) })}
         />
       )}
     </div>

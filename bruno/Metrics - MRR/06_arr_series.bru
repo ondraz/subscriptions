@@ -1,0 +1,28 @@
+meta {
+  name: ARR — time series
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/metrics/arr?start={{start}}&end={{end}}&interval=month
+  body: none
+  auth: bearer
+}
+
+params:query {
+  start: {{start}}
+  end: {{end}}
+  interval: month
+}
+
+auth:bearer {
+  token: {{apiKey}}
+}
+
+docs {
+  Bucketed ARR time series — same `start`/`end`/`interval` contract as
+  `/api/metrics/mrr` series mode. Each row is `{period, arr}` where `arr`
+  is the period's net new MRR × 12. `interval` accepts
+  `day | week | month | quarter | year`.
+}

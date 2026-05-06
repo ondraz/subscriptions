@@ -58,9 +58,16 @@ async def run_worker() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, _signal_handler)
 
+    from tidemill.fx_sync import run_periodic_fx_sync
     from tidemill.metrics.registry import discover_metrics
 
+    # Pre-fill fx_rate so the first batch of events doesn't dead-letter
+    # on FxRateMissingError before the periodic loop has a chance to run.
     tasks: list[asyncio.Task[None]] = [
+        asyncio.create_task(
+            run_periodic_fx_sync(factory, stop=stop),
+            name="fx-sync",
+        ),
         asyncio.create_task(
             _consume_state(kafka_url, factory, dlq, stop),
             name="state",
@@ -120,9 +127,11 @@ async def _consume_state(
                     await handle_state_event(session, event)
                     await session.commit()
                 await consumer.commit()
-            except Exception:
+                await _maybe_mark_resolved(factory, event.id, "state")
+            except Exception as exc:
                 logger.exception("State consumer error for event %s", event.id)
-                await _send_to_dlq(dlq, event)
+                await _dead_letter(factory, dlq, event, "state", exc)
+                await consumer.commit()
     finally:
         await consumer.stop()
 
@@ -139,6 +148,7 @@ async def _consume_metric(
 
     metrics = {m.name: m for m in discover_metrics()}
     metric = metrics[metric_name]
+    consumer_tag = f"metric:{metric_name}"
 
     consumer = EventConsumer(
         bootstrap_servers=kafka_url,
@@ -158,18 +168,65 @@ async def _consume_metric(
                     await metric.handle_event(event)
                     await session.commit()
                 await consumer.commit()
-            except Exception:
+                await _maybe_mark_resolved(factory, event.id, consumer_tag)
+            except Exception as exc:
                 logger.exception("Metric %s consumer error for event %s", metric_name, event.id)
-                await _send_to_dlq(dlq, event)
+                await _dead_letter(factory, dlq, event, consumer_tag, exc)
+                await consumer.commit()
     finally:
         await consumer.stop()
 
 
-async def _send_to_dlq(dlq: EventProducer, event: Event) -> None:
+async def _dead_letter(
+    factory: async_sessionmaker[AsyncSession],
+    dlq: EventProducer,
+    event: Event,
+    consumer: str,
+    error: BaseException,
+) -> None:
+    """Persist a dead-letter row and mirror to the Kafka DLQ topic.
+
+    Uses a fresh DB session because the handler's session has been rolled
+    back. Failures here are logged but never re-raised — the worker must
+    keep consuming.
+    """
+    from tidemill.dead_letter import record
+
+    try:
+        async with factory() as session:
+            await record(session, event, consumer, error)
+    except Exception:
+        logger.exception("Failed to record dead-letter row for event %s (%s)", event.id, consumer)
+
     try:
         await dlq.publish(event)
     except Exception:
-        logger.exception("Failed to send event %s to DLQ", event.id)
+        logger.exception("Failed to send event %s to Kafka DLQ", event.id)
+
+
+async def _maybe_mark_resolved(
+    factory: async_sessionmaker[AsyncSession],
+    event_id: str,
+    consumer: str,
+) -> None:
+    """Best-effort resolve any prior dead-letter row for this (event, consumer).
+
+    Cheap UPDATE that no-ops when the row doesn't exist or is already
+    resolved. Errors are swallowed — successful event processing must
+    never fail because of dead-letter bookkeeping.
+    """
+    from tidemill.dead_letter import mark_resolved
+
+    try:
+        async with factory() as session:
+            await mark_resolved(session, event_id, consumer)
+    except Exception:
+        logger.debug(
+            "Could not mark dead-letter resolved for event %s (%s)",
+            event_id,
+            consumer,
+            exc_info=True,
+        )
 
 
 if __name__ == "__main__":

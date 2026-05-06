@@ -212,6 +212,35 @@ def backfill(
     asyncio.run(_backfill())
 
 
+@app.command("fx-sync")
+def fx_sync(
+    days: int = typer.Option(
+        730,
+        help="Lookback window when the table is empty. Ignored if rates exist.",
+    ),
+) -> None:
+    """Fetch missing FX rates from Frankfurter and upsert into ``fx_rate``.
+
+    Safe to run repeatedly: only days after the last stored rate are
+    fetched. Use this from seed scripts before generating historical data
+    and from cron for redundancy with the API/worker background loop.
+    """
+
+    async def _run() -> None:
+        from tidemill.database import make_engine, make_session_factory
+        from tidemill.fx_sync import sync_fx_rates
+
+        engine = make_engine(_db_url())
+        factory = make_session_factory(engine)
+        async with factory() as session:
+            n = await sync_fx_rates(session)
+            await session.commit()
+        await engine.dispose()
+        typer.echo(f"fx-sync: wrote {n} rows")
+
+    asyncio.run(_run())
+
+
 @app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", help="Bind host"),
@@ -229,6 +258,113 @@ def worker() -> None:
     from tidemill.worker import run_worker
 
     asyncio.run(run_worker())
+
+
+@app.command("dlq-list")
+def dlq_list(
+    consumer: str | None = typer.Option(None, help="Filter by consumer (e.g. metric:mrr)"),
+    error_type: str | None = typer.Option(None, help="Filter by error_type"),
+    unresolved_only: bool = typer.Option(True, help="Hide rows already replayed"),
+    limit: int = typer.Option(50),
+) -> None:
+    """List dead-lettered events (failed handler runs awaiting replay)."""
+
+    async def _run() -> None:
+        from sqlalchemy import text
+
+        from tidemill.database import make_engine, make_session_factory
+
+        engine = make_engine(_db_url())
+        factory = make_session_factory(engine)
+        sql = (
+            "SELECT event_id, consumer, event_type, error_type, error_message,"
+            " occurred_at, dead_lettered_at, resolved_at"
+            " FROM dead_letter_event WHERE 1=1"
+        )
+        params: dict[str, Any] = {"lim": limit}
+        if consumer:
+            sql += " AND consumer = :consumer"
+            params["consumer"] = consumer
+        if error_type:
+            sql += " AND error_type = :err"
+            params["err"] = error_type
+        if unresolved_only:
+            sql += " AND resolved_at IS NULL"
+        sql += " ORDER BY dead_lettered_at DESC LIMIT :lim"
+        async with factory() as session:
+            rows = (await session.execute(text(sql), params)).mappings().all()
+        await engine.dispose()
+        if not rows:
+            typer.echo("(none)")
+            return
+        for r in rows:
+            typer.echo(
+                f"[{r['dead_lettered_at'].isoformat()}] {r['consumer']:14}"
+                f" {r['error_type']:18} {r['event_id']}  {r['event_type']}"
+            )
+            typer.echo(f"  {r['error_message']}")
+
+    asyncio.run(_run())
+
+
+@app.command("dlq-replay")
+def dlq_replay(
+    consumer: str | None = typer.Option(None, help="Restrict to this consumer"),
+    error_type: str | None = typer.Option(None, help="Restrict to this error_type"),
+) -> None:
+    """Re-publish unresolved dead-letter events back to Kafka.
+
+    The worker picks them up on its normal topic. Rows whose handler now
+    succeeds get their ``resolved_at`` set the next time the failure clears.
+    """
+
+    async def _run() -> None:
+        import json as _json
+
+        from sqlalchemy import text
+
+        from tidemill.bus import EventProducer
+        from tidemill.database import make_engine, make_session_factory
+        from tidemill.events import Event
+
+        engine = make_engine(_db_url())
+        factory = make_session_factory(engine)
+        sql = (
+            "SELECT event_id, source_id, event_type, payload, occurred_at"
+            " FROM dead_letter_event WHERE resolved_at IS NULL"
+        )
+        params: dict[str, Any] = {}
+        if consumer:
+            sql += " AND consumer = :consumer"
+            params["consumer"] = consumer
+        if error_type:
+            sql += " AND error_type = :err"
+            params["err"] = error_type
+        async with factory() as session:
+            rows = (await session.execute(text(sql), params)).mappings().all()
+        if not rows:
+            typer.echo("Nothing to replay.")
+            await engine.dispose()
+            return
+        producer = EventProducer(bootstrap_servers=_kafka_url())
+        await producer.start()
+        for r in rows:
+            payload = _json.loads(r["payload"])
+            event = Event(
+                id=r["event_id"],
+                source_id=r["source_id"],
+                type=r["event_type"],
+                occurred_at=r["occurred_at"],
+                published_at=r["occurred_at"],
+                customer_id=payload.get("customer_id", ""),
+                payload=payload,
+            )
+            await producer.publish(event)
+        await producer.stop()
+        await engine.dispose()
+        typer.echo(f"Replayed {len(rows)} event(s) to Kafka.")
+
+    asyncio.run(_run())
 
 
 cli = app

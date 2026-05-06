@@ -59,7 +59,7 @@ These are accepted by every metric GET endpoint via the shared
 | Param | Meaning | Example |
 | --- | --- | --- |
 | `dimensions` | Group by one or more cube dimensions (repeatable) | `dimensions=customer_country&dimensions=plan_name` |
-| `filter` | `key=value` filter on a cube dim/attr (repeatable) | `filter=currency=usd` |
+| `filter` | `key=value` filter on a cube dim/attr (repeatable) | `filter=currency=USD` |
 | `granularity` | Override the time-series bucket | `granularity=week` |
 | `segment` | Saved segment id to filter by | `segment={{segmentId}}` |
 | `compare_segments` | Saved segment ids to compare side-by-side | `compare_segments=…&compare_segments=…` |

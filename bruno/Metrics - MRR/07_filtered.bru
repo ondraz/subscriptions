@@ -1,18 +1,18 @@
 meta {
   name: MRR — filter by cube field
   type: http
-  seq: 6
+  seq: 7
 }
 
 get {
-  url: {{baseUrl}}/api/metrics/mrr?at={{end}}&filter=currency=usd&filter=customer_country=US
+  url: {{baseUrl}}/api/metrics/mrr?at={{end}}&filter=currency=USD&filter=customer_country=US
   body: none
   auth: bearer
 }
 
 params:query {
   at: {{end}}
-  filter: currency=usd
+  filter: currency=USD
   filter: customer_country=US
 }
 

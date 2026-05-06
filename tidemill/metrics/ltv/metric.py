@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +12,8 @@ from tidemill.metrics.base import Metric, QuerySpec
 from tidemill.metrics.ltv.cubes import LtvInvoiceCube
 from tidemill.metrics.registry import register
 from tidemill.segments.compiler import build_spec_fragment
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from datetime import date
@@ -44,7 +47,19 @@ class LtvMetric(Metric):
 
         p = event.payload
         amount = p.get("amount_cents", 0)
-        currency = p.get("currency", "USD") or "USD"
+        cur_raw = p.get("currency")
+        if cur_raw:
+            currency = cur_raw.upper()
+        else:
+            logger.warning(
+                "LTV event missing currency, defaulting to USD",
+                extra={
+                    "event_id": event.id,
+                    "event_type": event.type,
+                    "source_id": event.source_id,
+                },
+            )
+            currency = "USD"
         amount_base = await to_base_cents(amount, currency, event.occurred_at.date(), self.db)
 
         await self.db.execute(

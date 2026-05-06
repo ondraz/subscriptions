@@ -27,6 +27,8 @@ configure_logging("tidemill-api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    import asyncio
+
     db_url = os.environ.get(
         "TIDEMILL_DATABASE_URL",
         "postgresql+asyncpg://localhost/tidemill",
@@ -51,7 +53,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
         )
 
-    app.state.session_factory = make_session_factory(engine)
+    factory = make_session_factory(engine)
+    app.state.session_factory = factory
 
     # Connector configs — used by webhook handlers for signature verification.
     app.state.connector_configs = {
@@ -65,7 +68,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await producer.start()
     app.state.producer = producer
 
+    # Background FX-rate refresher. First tick runs immediately so newly-
+    # arrived non-base-currency events have a row to convert against.
+    from tidemill.fx_sync import run_periodic_fx_sync
+
+    fx_stop = asyncio.Event()
+    fx_task = asyncio.create_task(
+        run_periodic_fx_sync(factory, stop=fx_stop),
+        name="fx-sync",
+    )
+    app.state.fx_stop = fx_stop
+    app.state.fx_task = fx_task
+
     yield
+
+    fx_stop.set()
+    await asyncio.gather(fx_task, return_exceptions=True)
 
     await producer.stop()
     await engine.dispose()

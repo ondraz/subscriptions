@@ -93,6 +93,13 @@ fi
 echo "Webhook secret: ${WHSEC:0:12}..."
 
 echo ""
+echo "=== Pre-seeding fx_rate (Frankfurter / ECB) ==="
+# Populate fx_rate before generating subscriptions so historical billing
+# dates can resolve EUR/GBP → USD without dead-lettering metric events.
+$COMPOSE exec -T api tidemill fx-sync \
+    || echo "WARN: fx-sync failed (continuing — events may dead-letter on FxRateMissingError)"
+
+echo ""
 echo "=== Seeding Stripe test data ==="
 uv run python "$ROOT/deploy/seed/stripe_seed.py" \
     --customers "$SEED_CUSTOMERS" --months "$SEED_MONTHS"
