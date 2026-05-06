@@ -147,6 +147,12 @@ Stripe is the primary connector. It uses the webhook/Kafka ingestion architectur
 | `customer.created` | `customer.created` | Copies `address.country` onto the payload so segmentation by country works out of the box |
 | `customer.updated` | `customer.updated` | |
 | `customer.deleted` | `customer.deleted` | |
+| `product.created` | `product.created` | Catalog sync — populates the `product` table used as a dimension in MRR / Churn cubes |
+| `product.updated` | `product.updated` | |
+| `product.deleted` | `product.deleted` | Marks the row inactive (plans may still reference it) |
+| `price.created` | `plan.created` | Stripe Prices map onto the `plan` table; populates `interval`, `billing_scheme`, `usage_type`, etc. |
+| `price.updated` | `plan.updated` | |
+| `price.deleted` | `plan.deleted` | Marks the row inactive (subscriptions may still reference it) |
 | `customer.subscription.created` | `subscription.created`, optionally `subscription.trial_started` | If `status=trialing`, also emit trial event |
 | `customer.subscription.updated` | Depends on what changed (see below) | Most complex translation |
 | `customer.subscription.deleted` | `subscription.churned` | Forwards `cancellation_details.feedback` as `cancel_reason` |
@@ -230,7 +236,9 @@ async def backfill(self, since: datetime | None = None) -> AsyncIterator[Event]:
     there the normal consumer pipeline (core state + metrics) processes
     them exactly like live webhooks.
 
-    Order: customers → subscriptions → invoices → payments.
+    Order: products → prices (plans) → customers → subscriptions → invoices → payments.
+    Catalog objects come first so subscription rows can resolve their
+    plan_id foreign key when the state consumer upserts them.
     Within each type, objects are yielded oldest-first.
     """
     stripe.api_key = self.config["api_key"]
