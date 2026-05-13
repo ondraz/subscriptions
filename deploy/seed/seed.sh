@@ -56,6 +56,12 @@ trap stop_stripe_listen EXIT
 
 echo "=== Starting local stack ==="
 export AUTH_ENABLED=false
+# Clear any host-shell STRIPE_WEBHOOK_SECRET so compose's ${VAR:-}
+# interpolation falls through to deploy/compose/.env. direnv-loaded shells
+# carry the .env value as a real export, so a stale shell value would
+# otherwise mask a freshly-updated .env and the API would boot with the
+# wrong whsec — every webhook then fails signature verification with 400.
+unset STRIPE_WEBHOOK_SECRET
 $COMPOSE up -d --build --wait 2>&1 | tail -5
 
 echo ""
@@ -78,19 +84,28 @@ echo "=== Starting stripe listen ==="
 stripe listen --forward-to "$API/api/webhooks/stripe" --latest > /tmp/stripe-listen.log 2>&1 &
 STRIPE_PID=$!
 
-# Wait for stripe listen to output the webhook signing secret
+# Wait for stripe listen to output the webhook signing secret, then check
+# it matches what the API container booted with — they must agree or every
+# forwarded webhook fails signature verification with 400 and the seed
+# silently produces no data.
 for i in $(seq 1 30); do
     WHSEC=$(grep -o 'whsec_[a-zA-Z0-9_]*' /tmp/stripe-listen.log 2>/dev/null | head -1) || true
     if [[ -n "${WHSEC:-}" ]]; then break; fi
     sleep 1
 done
-
 if [[ -z "${WHSEC:-}" ]]; then
     echo "ERROR: stripe listen didn't produce a webhook secret"
     cat /tmp/stripe-listen.log
     exit 1
 fi
 echo "Webhook secret: ${WHSEC:0:12}..."
+
+API_WHSEC=$($COMPOSE exec -T api printenv STRIPE_WEBHOOK_SECRET 2>/dev/null | tr -d '\r' || echo "")
+if [[ "$API_WHSEC" != "$WHSEC" ]]; then
+    echo "ERROR: STRIPE_WEBHOOK_SECRET mismatch — API has '${API_WHSEC:0:12}...', stripe listen signs with '${WHSEC:0:12}...'"
+    echo "       Update deploy/compose/.env STRIPE_WEBHOOK_SECRET to match the CLI's whsec, then re-run."
+    exit 1
+fi
 
 echo ""
 echo "=== Pre-seeding fx_rate (Frankfurter / ECB) ==="
@@ -210,17 +225,20 @@ else
     echo "PASS: Sources present"
 fi
 
-if [[ "$metrics" == '["churn","expenses","ltv","mrr","retention","trials"]' ]]; then
+if [[ "$metrics" == '["churn","expenses","ltv","mrr","retention","trials","usage_revenue"]' ]]; then
     echo "PASS: All metrics registered"
 else
-    echo "FAIL: Expected [churn, expenses, ltv, mrr, retention, trials], got: $metrics"
+    echo "FAIL: Expected [churn, expenses, ltv, mrr, retention, trials, usage_revenue], got: $metrics"
     errors=$((errors + 1))
 fi
 
-if [[ "$mrr" != "0" && "$mrr" != '"0"' && "$mrr" != "null" ]]; then
+# API returns the snapshot as a JSON number (e.g. 0, 0.0, 1234567.0) — treat
+# any value that parses to a positive float as a pass.
+mrr_positive=$(python3 -c "import sys; v=sys.argv[1]; print('1' if v not in ('','null','CURL_FAILED') and float(v) > 0 else '0')" "$mrr" 2>/dev/null || echo "0")
+if [[ "$mrr_positive" == "1" ]]; then
     echo "PASS: MRR is non-zero ($mrr cents)"
 else
-    echo "FAIL: MRR is zero or null"
+    echo "FAIL: MRR is zero or null ($mrr)"
     errors=$((errors + 1))
 fi
 
