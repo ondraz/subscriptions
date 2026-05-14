@@ -2,25 +2,24 @@ import { useTimeRange } from '@/hooks/useTimeRange'
 import { useMRR, useMRRBreakdown, useMRRWaterfall, useARR } from '@/hooks/useMetrics'
 import { useSegments } from '@/hooks/useSegments'
 import { KPICard } from '@/components/charts/KPICard'
-import { TimeSeriesChart, type TimeSeriesSeries } from '@/components/charts/TimeSeriesChart'
+import { TimeSeriesChart } from '@/components/charts/TimeSeriesChart'
 import { MRRBreakdownChart } from '@/components/charts/MRRBreakdownChart'
 import { BarBreakdownChart } from '@/components/charts/BarBreakdownChart'
 import { WaterfallChart } from '@/components/charts/WaterfallChart'
 import { ChartContainer } from '@/components/charts/ChartContainer'
 import { DimensionPicker } from '@/components/controls/DimensionPicker'
 import { SegmentPicker } from '@/components/controls/SegmentPicker'
-import { formatCurrency, formatPeriod } from '@/lib/formatters'
-import { periodStarts } from '@/lib/periods'
-import { COLORWAY } from '@/lib/colors'
+import { formatCurrency } from '@/lib/formatters'
+import {
+  cumulativeMrrSeries,
+  type CumulativeMrrGroupBy,
+  type MrrMovementRow,
+} from '@/lib/mrrSeries'
 import { MRR_DIMENSIONS } from '@/lib/constants'
 import { useMemo, useState } from 'react'
 import type { WaterfallEntry } from '@/lib/types'
 
-interface MRRSeriesRow {
-  period: string
-  amount_base: number
-  segment_id?: string
-}
+type MRRSeriesRow = MrrMovementRow
 
 export function MRRReport() {
   const { start, end, interval } = useTimeRange({ range: 'last_1y' })
@@ -38,11 +37,14 @@ export function MRRReport() {
   const { data: currentMrr, isLoading: mrrLoading } = useMRR<number>({ ...segParams })
   const { data: currentArr, isLoading: arrLoading } = useARR<number>({ ...segParams })
 
-  // Fetch MRR movements from beginning of time so cumulative sum = MRR level
+  // Fetch MRR movements from beginning of time so cumulative sum = MRR level.
+  // Pass the picked dimension so the API returns one row per (period, value)
+  // and the over-time chart can render a line per dimension value.
   const { data: mrrSeries, isLoading: seriesLoading } = useMRR<MRRSeriesRow[]>({
     start: '2000-01-01',
     end,
     interval,
+    dimensions,
     ...segParams,
   })
 
@@ -57,81 +59,21 @@ export function MRRReport() {
   // visible period. Sampling (rather than filtering on movement dates) keeps
   // the line drawn even when the active segment has no movements inside the
   // visible window — the level just carries forward from the last movement.
-  //
-  // When compare mode is active the API returns rows tagged with
-  // ``segment_id`` (one per compare branch); we group them so each branch
-  // becomes its own line on the chart instead of summing into one series.
   const { mrrOverTime, overTimeSeries } = useMemo(() => {
-    const periods = periodStarts(start, end, interval)
     const rows = mrrSeries ?? []
-    const tagged = compareSegments.length > 0 && rows.some((r) => r.segment_id)
-
-    if (!tagged) {
-      const sorted = [...rows].sort((a, b) => a.period.localeCompare(b.period))
-      let level = 0
-      const cumulative = sorted.map((row) => {
-        level += row.amount_base / 100
-        return { iso: row.period.slice(0, 10), mrr: level }
-      })
-      let idx = 0
-      let curLevel = 0
-      const data = periods.map((p) => {
-        while (idx < cumulative.length && cumulative[idx].iso <= p) {
-          curLevel = cumulative[idx].mrr
-          idx++
-        }
-        return { date: formatPeriod(p, interval), mrr: curLevel }
-      })
-      return { mrrOverTime: data, overTimeSeries: undefined }
-    }
-
-    // Compare mode: bucket rows by segment_id, compute per-segment cumulative.
-    const bySegment = new Map<string, MRRSeriesRow[]>()
-    for (const r of rows) {
-      const id = r.segment_id ?? ''
-      if (!bySegment.has(id)) bySegment.set(id, [])
-      bySegment.get(id)!.push(r)
-    }
-    // Preserve user's compare order, fall back to any extra ids.
-    const orderedIds = [
-      ...compareSegments.filter((id) => bySegment.has(id)),
-      ...[...bySegment.keys()].filter((id) => !compareSegments.includes(id)),
-    ]
-    const perSegmentSamples = new Map<string, number[]>()
-    for (const id of orderedIds) {
-      const segRows = [...(bySegment.get(id) ?? [])].sort((a, b) =>
-        a.period.localeCompare(b.period),
-      )
-      let level = 0
-      const cumulative = segRows.map((row) => {
-        level += row.amount_base / 100
-        return { iso: row.period.slice(0, 10), mrr: level }
-      })
-      let idx = 0
-      let curLevel = 0
-      const samples = periods.map((p) => {
-        while (idx < cumulative.length && cumulative[idx].iso <= p) {
-          curLevel = cumulative[idx].mrr
-          idx++
-        }
-        return curLevel
-      })
-      perSegmentSamples.set(id, samples)
-    }
-    const series: TimeSeriesSeries[] = orderedIds.map((id, i) => ({
-      key: id,
-      label: segmentNameById.get(id) ?? id,
-      color: COLORWAY[i % COLORWAY.length],
-    }))
-    const data = periods.map((p, i) => {
-      const row: Record<string, unknown> = { date: formatPeriod(p, interval) }
-      for (const id of orderedIds) {
-        row[id] = perSegmentSamples.get(id)?.[i] ?? 0
+    let groupBy: CumulativeMrrGroupBy | undefined
+    if (compareSegments.length > 0) {
+      groupBy = {
+        kind: 'segment',
+        orderedIds: compareSegments,
+        label: (id) => segmentNameById.get(id) ?? id,
       }
-      return row
-    })
-    return { mrrOverTime: data, overTimeSeries: series }
-  }, [mrrSeries, start, end, interval, compareSegments, segmentNameById])
+    } else if (dimensions[0]) {
+      groupBy = { kind: 'dimension', key: dimensions[0] }
+    }
+    const result = cumulativeMrrSeries(rows, start, end, interval, { groupBy })
+    return { mrrOverTime: result.data, overTimeSeries: result.series }
+  }, [mrrSeries, start, end, interval, compareSegments, segmentNameById, dimensions])
 
   // Transform breakdown: API returns {movement_type, amount_base} in cents.
   // When `dimensions` is set, each movement_type has one row per segment
@@ -240,6 +182,10 @@ export function MRRReport() {
           metric: 'mrr',
           endpoint: '/api/metrics/mrr',
           params: { start, end, interval },
+          dimensions: dimensions.length ? dimensions : undefined,
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'mrr_cumulative_series',
           chartType: 'line',
           timeRangeMode: 'fixed',
         }}
@@ -256,10 +202,14 @@ export function MRRReport() {
       <ChartContainer
         title={dimKey ? `MRR Breakdown by ${dimKey}` : 'MRR Breakdown'}
         chartConfig={{
-          name: 'MRR Breakdown',
+          name: dimKey ? `MRR Breakdown by ${dimKey}` : 'MRR Breakdown',
           metric: 'mrr',
           endpoint: '/api/metrics/mrr/breakdown',
-          params: { start, end, ...(dimKey ? { dimensions: [dimKey] } : {}) },
+          params: { start, end },
+          dimensions: dimKey ? [dimKey] : undefined,
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'mrr_breakdown_bars',
           chartType: 'bar',
           timeRangeMode: 'fixed',
         }}
@@ -288,6 +238,9 @@ export function MRRReport() {
           metric: 'mrr',
           endpoint: '/api/metrics/mrr/waterfall',
           params: { start, end, interval },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'waterfall',
           chartType: 'waterfall',
           timeRangeMode: 'fixed',
         }}

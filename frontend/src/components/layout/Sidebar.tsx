@@ -7,7 +7,9 @@ import {
   DollarSign,
   FlaskConical,
   BarChart3,
+  Bookmark,
   Filter,
+  Tag,
   Settings,
 } from 'lucide-react'
 import { GlobalTimeRangePicker } from '@/components/controls/GlobalTimeRangePicker'
@@ -15,7 +17,9 @@ import { GlobalTimeRangePicker } from '@/components/controls/GlobalTimeRangePick
 const navItems = [
   { to: '/', icon: BarChart3, label: 'Overview' },
   { to: '/dashboards', icon: LayoutDashboard, label: 'Dashboards' },
+  { to: '/charts', icon: Bookmark, label: 'Saved Charts' },
   { to: '/segments', icon: Filter, label: 'Segments' },
+  { to: '/attributes', icon: Tag, label: 'Attributes' },
 ]
 
 const reportItems = [

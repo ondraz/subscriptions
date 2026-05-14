@@ -29,7 +29,11 @@ from tidemill.attributes.ingest import (
     upsert_attribute_definition,
     upsert_customer_attribute,
 )
-from tidemill.attributes.registry import distinct_values, list_definitions
+from tidemill.attributes.registry import (
+    distinct_values,
+    list_customer_rows,
+    list_definitions,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -124,6 +128,30 @@ async def get_attribute_values(
         "key": key,
         "values": [v.isoformat() if hasattr(v, "isoformat") else v for v in values],
     }
+
+
+# ── Browse all imported customer-attribute rows ─────────────────────────
+
+
+@router.get("/customer-attributes")
+async def list_customer_attribute_rows(
+    key: str | None = None,
+    search: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    session: AsyncSession = Depends(_get_session),
+) -> dict[str, Any]:
+    """Paginated view of every ``customer_attribute`` row.
+
+    Supports filtering by attribute ``key`` and a case-insensitive substring
+    ``search`` matched against the customer's name, email, or external id.
+    Values are coalesced from the typed value columns into a single
+    polymorphic ``value`` field for display.
+    """
+    total, rows = await list_customer_rows(
+        session, key=key, search=search, limit=limit, offset=offset
+    )
+    return {"total": total, "rows": rows, "limit": limit, "offset": offset}
 
 
 # ── Customer attribute rows ─────────────────────────────────────────────

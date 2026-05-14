@@ -188,6 +188,9 @@ export function ChurnReport() {
           metric: 'churn',
           endpoint: '/api/metrics/churn',
           params: { start, end, interval },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'churn_timeline',
           chartType: 'line',
           timeRangeMode: 'fixed',
         }}
@@ -202,6 +205,9 @@ export function ChurnReport() {
           metric: 'churn',
           endpoint: '/api/metrics/mrr/waterfall',
           params: { start, end, interval },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'lost_mrr_bars',
           chartType: 'bar',
           timeRangeMode: 'fixed',
         }}
@@ -221,7 +227,11 @@ export function ChurnReport() {
             name: `Lost Revenue by ${dimKey}`,
             metric: 'churn',
             endpoint: '/api/metrics/churn',
-            params: { start, end, type: 'revenue', dimensions: [dimKey] },
+            params: { start, end, type: 'revenue' },
+            dimensions: [dimKey],
+            segment: segment ?? undefined,
+            compareSegments: compareSegments.length ? compareSegments : undefined,
+            transform: 'lost_mrr_bars',
             chartType: 'bar',
             timeRangeMode: 'fixed',
           }}

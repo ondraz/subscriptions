@@ -56,11 +56,8 @@ export function resolveRelativeRange(range: RelativeRange): { start: string; end
 }
 
 // Dimensions here must be (a) declared on the metric's Cube and (b) backed
-// by real data in the current connectors. Plan/product dims are omitted
-// until the Stripe connector ingests plan.* / product.* events — today
-// subscription.plan_id is always NULL so any join through `plan` returns
-// empty.
-export const MRR_DIMENSIONS = ['currency', 'customer_country']
+// by real data in the current connectors.
+export const MRR_DIMENSIONS = ['currency', 'customer_country', 'plan_name']
 
 // `churn_type` is excluded because the endpoint already filters on it
 // (type=logo|revenue), so grouping by it is a no-op. The remaining dims

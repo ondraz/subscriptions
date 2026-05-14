@@ -136,7 +136,10 @@ export function RetentionReport() {
           metric: 'retention',
           endpoint: '/api/metrics/retention',
           params: { start, end, interval },
-          chartType: 'line',
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'retention_nrr_grr',
+          chartType: 'bar',
           timeRangeMode: 'fixed',
         }}
       >
@@ -155,6 +158,9 @@ export function RetentionReport() {
           metric: 'retention',
           endpoint: '/api/metrics/retention',
           params: { start, end },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'cohort_heatmap',
           chartType: 'cohort_heatmap',
           timeRangeMode: 'fixed',
         }}

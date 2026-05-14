@@ -88,6 +88,9 @@ export function TrialsReport() {
           metric: 'trials',
           endpoint: '/api/metrics/trials/funnel',
           params: { start, end },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'trial_funnel_bars',
           chartType: 'bar',
           timeRangeMode: 'fixed',
         }}
@@ -108,6 +111,9 @@ export function TrialsReport() {
           metric: 'trials',
           endpoint: '/api/metrics/trials/series',
           params: { start, end, interval },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'trial_outcomes_bars',
           chartType: 'stacked_bar',
           timeRangeMode: 'fixed',
         }}
@@ -128,6 +134,9 @@ export function TrialsReport() {
           metric: 'trials',
           endpoint: '/api/metrics/trials/series',
           params: { start, end, interval },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'trial_conversion_line',
           chartType: 'line',
           timeRangeMode: 'fixed',
         }}

@@ -34,16 +34,24 @@ async def _get_session() -> Any:
 
 
 async def _get_user_id(request: Request, session: AsyncSession = Depends(_get_session)) -> str:
-    """Resolve user id from Clerk JWT or API key."""
+    """Resolve user id from Clerk JWT or API key.
+
+    When auth is disabled (or the request is unauthenticated), all data is
+    owned by a synthetic ``anonymous`` user.  The ``app_user`` row for it is
+    upserted here so that FK-constrained inserts (dashboards, charts) succeed.
+    """
+    from tidemill.api.routers.auth import upsert_user
     from tidemill.config import AuthConfig
 
     if not AuthConfig().auth_enabled:
+        await upsert_user("anonymous", session)
         return "anonymous"
 
     from tidemill.api.deps import get_current_user
 
     user = await get_current_user(request)
     if user is None:
+        await upsert_user("anonymous", session)
         return "anonymous"
     return str(user["id"])
 

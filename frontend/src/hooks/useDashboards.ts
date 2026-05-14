@@ -57,6 +57,29 @@ export function useSaveChart() {
   })
 }
 
+export function useUpdateChart() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { id: string; name?: string; config?: ChartConfig }) =>
+      api.updateChart(data.id, { name: data.name, config: data.config }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['charts'] })
+      qc.invalidateQueries({ queryKey: ['dashboards'] })
+    },
+  })
+}
+
+export function useDeleteChart() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.deleteChart(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['charts'] })
+      qc.invalidateQueries({ queryKey: ['dashboards'] })
+    },
+  })
+}
+
 export function useAddChartToDashboard(dashboardId: string) {
   const qc = useQueryClient()
   return useMutation({

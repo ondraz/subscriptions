@@ -58,4 +58,18 @@ export function del<T>(path: string): Promise<T> {
   return request<T>(path, { method: 'DELETE' })
 }
 
+export async function postForm<T>(path: string, form: FormData): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (_getToken) {
+    const token = await _getToken()
+    if (token) headers['Authorization'] = `Bearer ${token}`
+  }
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', body: form, headers })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new ApiError(res.status, body || res.statusText)
+  }
+  return res.json()
+}
+
 export { ApiError }

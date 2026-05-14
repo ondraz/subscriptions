@@ -11,6 +11,8 @@ import { DashboardList } from '@/components/dashboards/DashboardList'
 import { DashboardEditor } from '@/components/dashboards/DashboardEditor'
 import { APIKeyManager } from '@/components/settings/APIKeyManager'
 import { SegmentsPage } from '@/pages/SegmentsPage'
+import { AttributesPage } from '@/pages/AttributesPage'
+import { SavedChartsPage } from '@/pages/SavedChartsPage'
 
 export const router = createBrowserRouter([
   {
@@ -24,12 +26,14 @@ export const router = createBrowserRouter([
       { index: true, element: <SummaryReport /> },
       { path: 'dashboards', element: <DashboardList /> },
       { path: 'dashboards/:id', element: <DashboardEditor /> },
+      { path: 'charts', element: <SavedChartsPage /> },
       { path: 'reports/mrr', element: <MRRReport /> },
       { path: 'reports/churn', element: <ChurnReport /> },
       { path: 'reports/retention', element: <RetentionReport /> },
       { path: 'reports/ltv', element: <LTVReport /> },
       { path: 'reports/trials', element: <TrialsReport /> },
       { path: 'segments', element: <SegmentsPage /> },
+      { path: 'attributes', element: <AttributesPage /> },
       { path: 'settings/api-keys', element: <APIKeyManager /> },
     ],
   },

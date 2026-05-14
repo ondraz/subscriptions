@@ -61,17 +61,57 @@ def _cancel_details(sub: dict[str, Any]) -> tuple[str | None, str | None]:
     return details.get("reason"), details.get("feedback")
 
 
+def _line_price_id(li: dict[str, Any]) -> str | None:
+    """Extract the price ID from a Stripe invoice line.
+
+    Stripe API ≥ 2024-09 exposes the price via ``pricing.price_details.price``;
+    older versions surfaced a full ``price`` object on the line. We probe the
+    new shape first and fall back to the legacy one so backfill against older
+    accounts still works.
+    """
+    pricing = li.get("pricing") or {}
+    pd = pricing.get("price_details") if isinstance(pricing, dict) else None
+    if isinstance(pd, dict) and pd.get("price"):
+        return str(pd["price"])
+    legacy = li.get("price")
+    if isinstance(legacy, dict) and legacy.get("id"):
+        return str(legacy["id"])
+    if isinstance(legacy, str):
+        return legacy
+    return None
+
+
+def _line_subscription_id(li: dict[str, Any]) -> str | None:
+    """Extract the subscription external ID from a Stripe invoice line.
+
+    Modern Stripe nests this under ``parent.subscription_item_details.subscription``;
+    older payloads exposed ``li.subscription`` directly.
+    """
+    parent = li.get("parent") or {}
+    sid = parent.get("subscription_item_details") if isinstance(parent, dict) else None
+    if isinstance(sid, dict) and sid.get("subscription"):
+        return str(sid["subscription"])
+    legacy = li.get("subscription")
+    if isinstance(legacy, str) and legacy:
+        return legacy
+    return None
+
+
 def _classify_line_kind(li: dict[str, Any]) -> str:
-    """Categorize a Stripe invoice line item.
+    """Best-effort categorization of a Stripe invoice line item.
 
     Returns one of: ``subscription`` (licensed recurring), ``usage`` (metered),
-    ``discount`` (negative-amount line), ``other`` (one-off, proration, tax-only).
+    ``discount`` (negative-amount line), ``other`` (one-off, proration, tax-only,
+    or anything where we can't read ``usage_type`` from the payload alone).
+
     The classification drives the trailing-3m usage component of MRR — only
-    ``usage`` lines feed ``metric_mrr_usage_component``.
+    ``usage`` lines feed ``metric_mrr_usage_component``. The state layer
+    re-runs this with a ``plan`` lookup to recover ``subscription`` / ``usage``
+    on payloads that only carry the price ID (Stripe API ≥ 2024-09).
     """
     price = li.get("price") or {}
-    recurring = price.get("recurring") or {}
-    usage_type = recurring.get("usage_type")
+    recurring = price.get("recurring") if isinstance(price, dict) else None
+    usage_type = recurring.get("usage_type") if isinstance(recurring, dict) else None
     if usage_type == "metered":
         return "usage"
     if usage_type == "licensed":
@@ -93,7 +133,8 @@ def _serialize_line(li: dict[str, Any]) -> dict[str, Any]:
         "quantity": li.get("quantity"),
         "period_start": _ts((li.get("period") or {}).get("start")),
         "period_end": _ts((li.get("period") or {}).get("end")),
-        "subscription_external_id": li.get("subscription"),
+        "subscription_external_id": _line_subscription_id(li),
+        "price_external_id": _line_price_id(li),
     }
 
 

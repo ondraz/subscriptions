@@ -76,6 +76,20 @@ export type RelativeRange =
 
 export type Interval = 'day' | 'week' | 'month' | 'quarter' | 'year'
 
+export type ChartTransform =
+  | 'mrr_cumulative_series'
+  | 'mrr_breakdown_bars'
+  | 'churn_timeline'
+  | 'lost_mrr_bars'
+  | 'retention_nrr_grr'
+  | 'arpu_timeline'
+  | 'cohort_ltv_bars'
+  | 'trial_funnel_bars'
+  | 'trial_outcomes_bars'
+  | 'trial_conversion_line'
+  | 'cohort_heatmap'
+  | 'waterfall'
+
 export interface ChartConfig {
   name: string
   metric: MetricName
@@ -89,6 +103,9 @@ export interface ChartConfig {
   }
   dimensions?: string[]
   filters?: Record<string, string>
+  segment?: string
+  compareSegments?: string[]
+  transform?: ChartTransform
   chartType: ChartType
   timeRangeMode: TimeRangeMode
   relativeRange?: RelativeRange

@@ -106,6 +106,9 @@ export function LTVReport() {
           metric: 'ltv',
           endpoint: '/api/metrics/ltv/arpu',
           params: { start, end, interval },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'arpu_timeline',
           chartType: 'line',
           timeRangeMode: 'fixed',
         }}
@@ -126,6 +129,9 @@ export function LTVReport() {
           metric: 'ltv',
           endpoint: '/api/metrics/ltv/cohort',
           params: { start, end },
+          segment: segment ?? undefined,
+          compareSegments: compareSegments.length ? compareSegments : undefined,
+          transform: 'cohort_ltv_bars',
           chartType: 'bar',
           timeRangeMode: 'fixed',
         }}

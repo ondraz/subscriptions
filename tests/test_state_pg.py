@@ -353,6 +353,81 @@ class TestInvoicePaymentPg:
         assert row[0] == "paid"
         assert row[1] is not None
 
+    async def test_line_kind_resolved_via_plan_lookup(self, pg_db):
+        """Connector says ``kind='other'`` but the plan lookup re-classifies.
+
+        Stripe API ≥ 2024-09 strips ``price.recurring`` from invoice lines, so
+        the connector falls back to ``other``. State must recover the right
+        kind (``usage`` / ``subscription``) by joining ``price_external_id``
+        against the ingested ``plan`` row.
+        """
+        await pg_db.execute(
+            text(
+                'INSERT INTO plan (id, source_id, external_id, name, "interval",'
+                " interval_count, amount_cents, currency, usage_type, active,"
+                " created_at) VALUES"
+                " ('pl_metered', :s, 'price_metered', 'Metered',"
+                " 'month', 1, 0, 'USD', 'metered', TRUE, :t),"
+                " ('pl_licensed', :s, 'price_licensed', 'Base',"
+                " 'month', 1, 2000, 'USD', 'licensed', TRUE, :t)"
+            ),
+            {"s": SRC, "t": T0},
+        )
+        await pg_db.commit()
+
+        await handle_state_event(
+            pg_db,
+            _evt(
+                "invoice.created",
+                {
+                    "external_id": "inv_kind",
+                    "customer_external_id": "cus_ext_1",
+                    "subscription_external_id": "",
+                    "status": "open",
+                    "currency": "USD",
+                    "subtotal_cents": 2300,
+                    "tax_cents": 0,
+                    "total_cents": 2300,
+                    "line_items": [
+                        {
+                            "kind": "other",
+                            "amount_cents": 2000,
+                            "currency": "USD",
+                            "price_external_id": "price_licensed",
+                        },
+                        {
+                            "kind": "other",
+                            "amount_cents": 300,
+                            "currency": "USD",
+                            "price_external_id": "price_metered",
+                        },
+                        {
+                            "kind": "other",
+                            "amount_cents": -50,
+                            "currency": "USD",
+                        },
+                    ],
+                },
+                external_id="inv_kind",
+            ),
+        )
+        await pg_db.commit()
+
+        rows = (
+            await pg_db.execute(
+                text(
+                    "SELECT kind, amount_cents FROM invoice_line_item"
+                    " WHERE invoice_id = (SELECT id FROM invoice"
+                    "  WHERE external_id = 'inv_kind')"
+                    " ORDER BY amount_cents DESC"
+                )
+            )
+        ).fetchall()
+        kinds = {r[1]: r[0] for r in rows}
+        assert kinds[2000] == "subscription"
+        assert kinds[300] == "usage"
+        assert kinds[-50] == "discount"
+
     async def test_payment_upsert(self, pg_db):
         """Failed then succeeded → final status is 'succeeded' via ON CONFLICT."""
         await handle_state_event(

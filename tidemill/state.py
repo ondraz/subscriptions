@@ -510,6 +510,13 @@ async def _replace_invoice_line_items(
         except FxRateMissingError:
             # Re-raise so the worker DLQs — same contract as MRR/LTV handlers.
             raise
+        kind = await _resolve_line_kind(
+            session,
+            source_id=event.source_id,
+            connector_kind=li.get("kind"),
+            price_external_id=li.get("price_external_id"),
+            amount_cents=amount_cents,
+        )
         await session.execute(
             text(
                 "INSERT INTO invoice_line_item"
@@ -527,7 +534,7 @@ async def _replace_invoice_line_items(
                 "src": event.source_id,
                 "sub_eid": li.get("subscription_external_id") or "",
                 "type": li.get("type"),
-                "kind": li.get("kind"),
+                "kind": kind,
                 "desc": li.get("description"),
                 "amt": amount_cents,
                 "amtb": amount_base_cents,
@@ -537,6 +544,44 @@ async def _replace_invoice_line_items(
                 "pe": _parse_ts(li.get("period_end")),
             },
         )
+
+
+async def _resolve_line_kind(
+    session: AsyncSession,
+    *,
+    source_id: str,
+    connector_kind: str | None,
+    price_external_id: str | None,
+    amount_cents: int,
+) -> str | None:
+    """Decide the canonical ``kind`` for an invoice line at insert time.
+
+    Modern Stripe payloads carry only a price ID, not the full recurring
+    block — so the connector's classifier can't distinguish
+    ``subscription`` from ``usage`` and falls back to ``other``. We recover
+    the distinction here by joining the price ID against the ``plan``
+    table's ``usage_type``. Falls back to whatever the connector supplied
+    when we don't have a price ID or the plan hasn't been ingested yet.
+    """
+    if price_external_id:
+        result = await session.execute(
+            text(
+                "SELECT usage_type FROM plan WHERE source_id = :src AND external_id = :pid LIMIT 1"
+            ),
+            {"src": source_id, "pid": price_external_id},
+        )
+        row = result.first()
+        if row is not None:
+            usage_type = row[0]
+            if usage_type == "metered":
+                return "usage"
+            if usage_type == "licensed":
+                return "subscription"
+    if connector_kind and connector_kind != "other":
+        return connector_kind
+    if amount_cents < 0:
+        return "discount"
+    return connector_kind or "other"
 
 
 async def _handle_invoice(session: AsyncSession, event: Event) -> None:

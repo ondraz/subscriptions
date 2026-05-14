@@ -36,6 +36,7 @@ async def _require_clerk_user(
     from tidemill.config import AuthConfig
 
     if not AuthConfig().auth_enabled:
+        await upsert_user("anonymous", session)
         return "anonymous"
 
     auth_header = request.headers.get("authorization", "")
