@@ -1,4 +1,39 @@
+# ───────────────────────────────────────────────────────────────────────
+# Root domain — public landing page + API (kept on root for webhook URLs)
+# ───────────────────────────────────────────────────────────────────────
 {$DOMAIN:localhost} {
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /auth/* {
+		reverse_proxy api:8000
+	}
+	handle /healthz {
+		reverse_proxy api:8000
+	}
+	handle /readyz {
+		reverse_proxy api:8000
+	}
+	handle /docs {
+		reverse_proxy api:8000
+	}
+	handle /openapi.json {
+		reverse_proxy api:8000
+	}
+
+	# Everything else: the static landing page
+	handle {
+		root * /srv/landing
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# ───────────────────────────────────────────────────────────────────────
+# app.${DOMAIN} — the React dashboard. Same-origin API for the SPA so
+# CORS isn't needed; webhooks continue to point at the root domain.
+# ───────────────────────────────────────────────────────────────────────
+app.{$DOMAIN:localhost} {
 	handle /api/* {
 		reverse_proxy api:8000
 	}

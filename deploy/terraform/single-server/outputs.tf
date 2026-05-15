@@ -24,8 +24,13 @@ output "nameservers" {
 }
 
 output "url" {
-  description = "URL of the analytics server"
+  description = "URL of the public landing page"
   value       = "https://${var.domain}"
+}
+
+output "app_url" {
+  description = "URL of the React dashboard"
+  value       = "https://app.${var.domain}"
 }
 
 output "grafana_url" {

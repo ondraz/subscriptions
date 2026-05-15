@@ -30,12 +30,31 @@ resource "hcloud_zone_rrset" "server_aaaa" {
   records = [{ value = hcloud_server.tidemill.ipv6_address }]
 }
 
-# grafana.<domain> — observability UI. Tempo, Loki, Prometheus, OTEL Collector
-# stay on the internal docker network; only Grafana is publicly reachable.
+# app.<domain> — React dashboard. The root domain serves the public landing
+# page; the SPA lives on this subdomain so its API calls stay same-origin.
 locals {
+  app_subdomain     = local.subdomain == "@" ? "app" : "app.${local.subdomain}"
   grafana_subdomain = local.subdomain == "@" ? "grafana" : "grafana.${local.subdomain}"
 }
 
+resource "hcloud_zone_rrset" "app_a" {
+  zone    = hcloud_zone.main.id
+  name    = local.app_subdomain
+  type    = "A"
+  ttl     = 300
+  records = [{ value = hcloud_server.tidemill.ipv4_address }]
+}
+
+resource "hcloud_zone_rrset" "app_aaaa" {
+  zone    = hcloud_zone.main.id
+  name    = local.app_subdomain
+  type    = "AAAA"
+  ttl     = 300
+  records = [{ value = hcloud_server.tidemill.ipv6_address }]
+}
+
+# grafana.<domain> — observability UI. Tempo, Loki, Prometheus, OTEL Collector
+# stay on the internal docker network; only Grafana is publicly reachable.
 resource "hcloud_zone_rrset" "grafana_a" {
   zone    = hcloud_zone.main.id
   name    = local.grafana_subdomain

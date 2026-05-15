@@ -38,8 +38,11 @@ tidemill/
 │   ├── compose/                        # Docker Compose (PostgreSQL + Redpanda + API + Worker)
 │   │   ├── docker-compose.yml
 │   │   ├── Dockerfile
-│   │   ├── Caddyfile
+│   │   ├── Caddyfile                   # Root → landing, app.${DOMAIN} → SPA, /api/* proxied on both
 │   │   └── .env.example
+│   ├── landing/                        # Static public landing page (served at tidemill.xyz)
+│   │   ├── index.html
+│   │   └── favicon.svg
 │   ├── seed/                           # Stripe + QuickBooks test data generation
 │   │   ├── stripe_seed.py
 │   │   ├── stripe_fixtures.json

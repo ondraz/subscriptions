@@ -4,7 +4,7 @@ Open-source subscription analytics engine — transparent, auditable metric comp
 
 Stripe is the primary integration. Lago and Kill Bill are supported as secondary connectors via same-database mode.
 
-**Docs:** https://ondraz.github.io/tidemill/
+**Site:** https://tidemill.xyz · **Live app:** https://app.tidemill.xyz · **Docs:** https://ondraz.github.io/tidemill/
 
 ## Metrics
 

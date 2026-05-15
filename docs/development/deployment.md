@@ -9,8 +9,11 @@ deploy/
 ├── compose/                          # Docker Compose (shared by both deployment modes)
 │   ├── docker-compose.yml
 │   ├── Dockerfile                    # Multi-stage: Node (frontend) + Python (backend)
-│   ├── Caddyfile                     # Serves frontend + proxies API
+│   ├── Caddyfile                     # Serves landing + app + proxies API
 │   └── .env.example
+├── landing/                          # Static landing page served on the root domain
+│   ├── index.html
+│   └── favicon.svg
 ├── seed/                             # Stripe test data generation
 │   ├── stripe_seed.py
 │   └── stripe_fixtures.json
@@ -101,7 +104,11 @@ The Dockerfile is a **multi-stage build**:
 1. **Stage 1 (Node 22):** Builds the React frontend — `npm ci && npm run build` produces static assets in `dist/`
 2. **Stage 2 (Python 3.13):** Installs the Python backend via `uv`, copies the built frontend to `/srv/frontend`
 
-Caddy serves the frontend static files and proxies `/api/*`, `/auth/*`, `/healthz`, `/readyz` to the FastAPI backend.
+Caddy serves three things:
+
+- **Root domain** (`tidemill.xyz`) — the static landing page from `/srv/landing` (bind-mounted from `deploy/landing/`).
+- **`app.` subdomain** — the React dashboard from `/srv/frontend` (the Docker volume populated by the API container).
+- **`/api/*`, `/auth/*`, `/healthz`, `/readyz`, `/docs`, `/openapi.json`** are reverse-proxied to FastAPI on both the root domain (so existing webhook URLs keep working) and the `app.` subdomain (so the SPA's API calls stay same-origin).
 
 ## Environment Variables for Production
 
@@ -159,30 +166,38 @@ Total: **~800 MB**. Fits on CX22 with headroom.
 
 ### Caddy Configuration
 
-Caddy serves the React frontend as static files and reverse-proxies API requests:
+Caddy splits the deployment into the public landing page (root domain) and the React dashboard (`app.` subdomain), with API routes proxied on both:
 
 ```
 {$DOMAIN:localhost} {
-    root * /srv/frontend
-    try_files {path} /index.html    # SPA fallback
-    file_server
+    handle /api/*       { reverse_proxy api:8000 }
+    handle /auth/*      { reverse_proxy api:8000 }
+    handle /healthz     { reverse_proxy api:8000 }
+    handle /readyz      { reverse_proxy api:8000 }
+    handle /docs        { reverse_proxy api:8000 }
+    handle /openapi.json{ reverse_proxy api:8000 }
 
-    handle /api/* {
-        reverse_proxy api:8000
+    handle {
+        root * /srv/landing
+        try_files {path} /index.html
+        file_server
     }
-    handle /auth/* {
-        reverse_proxy api:8000
-    }
-    handle /healthz {
-        reverse_proxy api:8000
-    }
-    handle /readyz {
-        reverse_proxy api:8000
+}
+
+app.{$DOMAIN:localhost} {
+    # same /api, /auth, /healthz proxies as above
+    handle /api/* { reverse_proxy api:8000 }
+    # …
+
+    handle {
+        root * /srv/frontend
+        try_files {path} /index.html    # SPA fallback
+        file_server
     }
 }
 ```
 
-The `try_files` directive sends all non-file paths to `index.html`, enabling React Router's client-side routing.
+The `try_files` directive sends all non-file paths to `index.html`, enabling React Router's client-side routing. Keeping `/api/*` on the root domain means Stripe webhooks pointed at `https://tidemill.xyz/api/webhooks/stripe` keep working when the SPA moves to the subdomain.
 
 ### Quickstart
 
@@ -214,8 +229,11 @@ terraform output nameservers
 # 6. Verify (wait ~2 min for cloud-init + DNS propagation)
 curl https://tidemill.xyz/healthz
 
-# 7. Open the frontend
+# 7. Open the public landing page
 open https://tidemill.xyz
+
+# 8. Open the React dashboard
+open https://app.tidemill.xyz
 ```
 
 ### What cloud-init Does
