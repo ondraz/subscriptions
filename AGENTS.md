@@ -228,7 +228,8 @@ Copy `.env.example` to `.env` and configure:
 - `DATABASE_URL` — PostgreSQL connection string (own DB for Stripe mode, Lago's DB for same-database mode)
 - `CONNECTOR` — `stripe`, `lago`, or `killbill`
 - `STRIPE_API_KEY` — Stripe API key
-- `STRIPE_WEBHOOK_SECRET` — Webhook signing secret
+- `STRIPE_WEBHOOK_SECRET` — Production webhook endpoint signing secret (used by the deployed app)
+- `STRIPE_CLI_WEBHOOK_SECRET` — `stripe listen` device secret for local seeding; `docker-compose.local.yml` remaps it onto the API container's `STRIPE_WEBHOOK_SECRET`
 - `QUICKBOOKS_CLIENT_ID` / `QUICKBOOKS_CLIENT_SECRET` — Intuit Developer OAuth credentials (optional; expense source)
 - `QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN` — verifier token for HMAC-SHA256 signed QBO webhooks
 - `QUICKBOOKS_REDIRECT_URI` — OAuth callback URL (`/api/connectors/quickbooks/oauth/callback`)

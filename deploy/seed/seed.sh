@@ -6,6 +6,9 @@
 #   - Docker running
 #   - Stripe CLI logged in (stripe login)
 #   - STRIPE_API_KEY env var set (sk_test_...)
+#   - STRIPE_CLI_WEBHOOK_SECRET in deploy/compose/.env matches the whsec
+#     printed by `stripe listen` (the CLI device secret). Production's
+#     STRIPE_WEBHOOK_SECRET is intentionally NOT used here.
 #
 # Usage:
 #   ./deploy/seed/seed.sh
@@ -56,12 +59,14 @@ trap stop_stripe_listen EXIT
 
 echo "=== Starting local stack ==="
 export AUTH_ENABLED=false
-# Clear any host-shell STRIPE_WEBHOOK_SECRET so compose's ${VAR:-}
-# interpolation falls through to deploy/compose/.env. direnv-loaded shells
-# carry the .env value as a real export, so a stale shell value would
-# otherwise mask a freshly-updated .env and the API would boot with the
-# wrong whsec — every webhook then fails signature verification with 400.
+# Clear any host-shell STRIPE_WEBHOOK_SECRET / STRIPE_CLI_WEBHOOK_SECRET so
+# compose's ${VAR:-} interpolation falls through to deploy/compose/.env.
+# direnv-loaded shells carry the .env value as a real export, so a stale
+# shell value would otherwise mask a freshly-updated .env and the API
+# would boot with the wrong whsec — every webhook then fails signature
+# verification with 400.
 unset STRIPE_WEBHOOK_SECRET
+unset STRIPE_CLI_WEBHOOK_SECRET
 $COMPOSE up -d --build --wait 2>&1 | tail -5
 
 echo ""
@@ -102,8 +107,9 @@ echo "Webhook secret: ${WHSEC:0:12}..."
 
 API_WHSEC=$($COMPOSE exec -T api printenv STRIPE_WEBHOOK_SECRET 2>/dev/null | tr -d '\r' || echo "")
 if [[ "$API_WHSEC" != "$WHSEC" ]]; then
-    echo "ERROR: STRIPE_WEBHOOK_SECRET mismatch — API has '${API_WHSEC:0:12}...', stripe listen signs with '${WHSEC:0:12}...'"
-    echo "       Update deploy/compose/.env STRIPE_WEBHOOK_SECRET to match the CLI's whsec, then re-run."
+    echo "ERROR: webhook secret mismatch — API has '${API_WHSEC:0:12}...', stripe listen signs with '${WHSEC:0:12}...'"
+    echo "       Set STRIPE_CLI_WEBHOOK_SECRET in deploy/compose/.env to the CLI's whsec, then re-run."
+    echo "       (STRIPE_WEBHOOK_SECRET stays reserved for the deployed production endpoint.)"
     exit 1
 fi
 

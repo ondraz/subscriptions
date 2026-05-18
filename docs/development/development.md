@@ -217,11 +217,14 @@ API key management itself requires Clerk authentication (not API key auth) — a
 
 ## Webhook Forwarding
 
-`make dev` starts `stripe listen` automatically. The CLI prints a temporary webhook signing secret (`whsec_...`) to `/tmp/stripe-listen-dev.log`. Set it in your environment if your webhook endpoint validates signatures:
+`make dev` starts `stripe listen` automatically. The CLI prints its device webhook signing secret (`whsec_...`) to `/tmp/stripe-listen-dev.log`. Put it in `STRIPE_CLI_WEBHOOK_SECRET` (the local-only variant — `STRIPE_WEBHOOK_SECRET` is reserved for the deployed production endpoint):
 
 ```bash
-export STRIPE_WEBHOOK_SECRET=whsec_...
+# In your repo-root .env (or deploy/compose/.env when seeding via Compose):
+STRIPE_CLI_WEBHOOK_SECRET=whsec_...
 ```
+
+When the API runs locally via `docker-compose.local.yml`, the override remaps `STRIPE_WEBHOOK_SECRET` inside the container to this value so signature verification succeeds.
 
 ### Manual Event Triggers
 
@@ -304,7 +307,8 @@ tidemill mrr
 | `TIDEMILL_DATABASE_URL`    | Yes      | —                  | PostgreSQL connection string (asyncpg)                      |
 | `KAFKA_BOOTSTRAP_SERVERS`  | Yes      | `localhost:9092`   | Kafka/Redpanda address                                      |
 | `STRIPE_API_KEY`           | Yes      | —                  | Stripe test mode key (`sk_test_...`)                        |
-| `STRIPE_WEBHOOK_SECRET`    | No       | —                  | Webhook signing secret (`whsec_...`)                        |
+| `STRIPE_WEBHOOK_SECRET`    | No       | —                  | Production webhook endpoint signing secret (`whsec_...`)    |
+| `STRIPE_CLI_WEBHOOK_SECRET`| No       | —                  | `stripe listen` device secret — used by `make seed` / local Compose to override `STRIPE_WEBHOOK_SECRET` inside the API container |
 | `AUTH_ENABLED`             | No       | `true`             | Set `false` to disable auth entirely                        |
 | `CLERK_SECRET_KEY`         | If auth  | —                  | Clerk secret key (`sk_test_...`)                            |
 | `CLERK_JWKS_URL`           | If auth  | —                  | Clerk JWKS URL for JWT verification                         |

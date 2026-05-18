@@ -4,6 +4,12 @@ services:
       target: api
     ports:
       - "8000:8000"
+    environment:
+      # Local seeding forwards events from `stripe listen`, which signs with
+      # the CLI device secret (STRIPE_CLI_WEBHOOK_SECRET). Override the
+      # production STRIPE_WEBHOOK_SECRET here so deploy/compose/.env can hold
+      # the real production secret without breaking `make seed`.
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_CLI_WEBHOOK_SECRET:-}
 
   worker:
     build:

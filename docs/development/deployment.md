@@ -120,7 +120,7 @@ Copy from `deploy/compose/.env.example` and fill in:
 | `POSTGRES_PASSWORD`    | Yes      | PostgreSQL password (no default — must be set)                 |
 | `DOMAIN`               | Yes      | Domain for Caddy TLS (e.g. `tidemill.xyz`)                    |
 | `STRIPE_API_KEY`       | No       | Stripe live key (`sk_live_...`)                                |
-| `STRIPE_WEBHOOK_SECRET`| No       | Stripe webhook signing secret                                  |
+| `STRIPE_WEBHOOK_SECRET`| No       | Production webhook endpoint signing secret (Stripe Dashboard → Webhooks → endpoint) |
 | `AUTH_ENABLED`         | No       | `true` (default) or `false` to disable auth                   |
 | `CLERK_PUBLISHABLE_KEY`| If auth  | Clerk publishable key (`pk_live_...`)                          |
 | `CLERK_SECRET_KEY`     | If auth  | Clerk secret key (`sk_live_...`)                               |
