@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - "release-*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref (tag, branch, or SHA) to deploy"
+        required: false
+        default: ""
 
 concurrency:
   group: deploy-production
@@ -13,6 +21,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Tailscale
         uses: tailscale/github-action@v4
         with:
@@ -21,13 +31,6 @@ jobs:
           tags: tag:ci
 
       - name: Deploy
-        run: |
-          ssh -o StrictHostKeyChecking=no tidemill@tidemill 'bash -s' <<EOF
-            set -euxo pipefail
-            cd /opt/tidemill
-            git fetch --tags --force
-            git checkout ${{ github.ref_name }}
-            git rev-parse HEAD
-            docker compose -f deploy/compose/docker-compose.yml build
-            docker compose -f deploy/compose/docker-compose.yml up -d --force-recreate
-          EOF
+        env:
+          DEPLOY_REF: ${{ inputs.ref || github.event.release.tag_name || github.ref_name }}
+        run: make deploy DEPLOY_REF="$DEPLOY_REF"

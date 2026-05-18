@@ -1,37 +1,19 @@
 # ───────────────────────────────────────────────────────────────────────
-# Root domain — public landing page + API (kept on root for webhook URLs)
+# Root domain — public landing page only. All API routes (including
+# webhooks and OAuth callbacks) live on app.${DOMAIN}.
 # ───────────────────────────────────────────────────────────────────────
 {$DOMAIN:localhost} {
-	handle /api/* {
-		reverse_proxy api:8000
-	}
-	handle /auth/* {
-		reverse_proxy api:8000
-	}
-	handle /healthz {
-		reverse_proxy api:8000
-	}
-	handle /readyz {
-		reverse_proxy api:8000
-	}
-	handle /docs {
-		reverse_proxy api:8000
-	}
-	handle /openapi.json {
-		reverse_proxy api:8000
-	}
-
-	# Everything else: the static landing page
-	handle {
-		root * /srv/landing
-		try_files {path} /index.html
-		file_server
-	}
+	root * /srv/landing
+	try_files {path} /index.html
+	file_server
 }
 
 # ───────────────────────────────────────────────────────────────────────
-# app.${DOMAIN} — the React dashboard. Same-origin API for the SPA so
-# CORS isn't needed; webhooks continue to point at the root domain.
+# app.${DOMAIN} — the React dashboard + API (same-origin, no CORS).
+# Stripe / QuickBooks webhooks and OAuth callbacks point here:
+#   https://app.${DOMAIN}/api/webhooks/stripe
+#   https://app.${DOMAIN}/api/webhooks/quickbooks
+#   https://app.${DOMAIN}/api/connectors/quickbooks/oauth/callback
 # ───────────────────────────────────────────────────────────────────────
 app.{$DOMAIN:localhost} {
 	handle /api/* {

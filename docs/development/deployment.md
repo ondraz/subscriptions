@@ -106,9 +106,8 @@ The Dockerfile is a **multi-stage build**:
 
 Caddy serves three things:
 
-- **Root domain** (`tidemill.xyz`) — the static landing page from `/srv/landing` (bind-mounted from `deploy/landing/`).
-- **`app.` subdomain** — the React dashboard from `/srv/frontend` (the Docker volume populated by the API container).
-- **`/api/*`, `/auth/*`, `/healthz`, `/readyz`, `/docs`, `/openapi.json`** are reverse-proxied to FastAPI on both the root domain (so existing webhook URLs keep working) and the `app.` subdomain (so the SPA's API calls stay same-origin).
+- **Root domain** (`tidemill.xyz`) — the static landing page from `/srv/landing` (bind-mounted from `deploy/landing/`). No API routes — the root is brochure-only.
+- **`app.` subdomain** — the React dashboard from `/srv/frontend` (the Docker volume populated by the API container), plus all FastAPI routes (`/api/*`, `/auth/*`, `/healthz`, `/readyz`, `/docs`, `/openapi.json`). Same-origin, so the SPA needs no CORS. **Webhooks (Stripe, QuickBooks) and OAuth callbacks must point at `https://app.<DOMAIN>/…`.**
 
 ## Environment Variables for Production
 
@@ -166,28 +165,22 @@ Total: **~800 MB**. Fits on CX22 with headroom.
 
 ### Caddy Configuration
 
-Caddy splits the deployment into the public landing page (root domain) and the React dashboard (`app.` subdomain), with API routes proxied on both:
+Caddy splits the deployment into the public landing page (root domain, brochure-only) and the React dashboard + API (`app.` subdomain). All FastAPI routes — including webhooks and OAuth callbacks — are served from the `app.` subdomain only:
 
 ```
 {$DOMAIN:localhost} {
-    handle /api/*       { reverse_proxy api:8000 }
-    handle /auth/*      { reverse_proxy api:8000 }
-    handle /healthz     { reverse_proxy api:8000 }
-    handle /readyz      { reverse_proxy api:8000 }
-    handle /docs        { reverse_proxy api:8000 }
-    handle /openapi.json{ reverse_proxy api:8000 }
-
-    handle {
-        root * /srv/landing
-        try_files {path} /index.html
-        file_server
-    }
+    root * /srv/landing
+    try_files {path} /index.html
+    file_server
 }
 
 app.{$DOMAIN:localhost} {
-    # same /api, /auth, /healthz proxies as above
-    handle /api/* { reverse_proxy api:8000 }
-    # …
+    handle /api/*        { reverse_proxy api:8000 }
+    handle /auth/*       { reverse_proxy api:8000 }
+    handle /healthz      { reverse_proxy api:8000 }
+    handle /readyz       { reverse_proxy api:8000 }
+    handle /docs         { reverse_proxy api:8000 }
+    handle /openapi.json { reverse_proxy api:8000 }
 
     handle {
         root * /srv/frontend
@@ -197,7 +190,7 @@ app.{$DOMAIN:localhost} {
 }
 ```
 
-The `try_files` directive sends all non-file paths to `index.html`, enabling React Router's client-side routing. Keeping `/api/*` on the root domain means Stripe webhooks pointed at `https://tidemill.xyz/api/webhooks/stripe` keep working when the SPA moves to the subdomain.
+The `try_files` directive sends all non-file paths to `index.html`, enabling React Router's client-side routing. **Webhook and OAuth-callback URLs must use the `app.` subdomain** — e.g. `https://app.tidemill.xyz/api/webhooks/stripe`, `https://app.tidemill.xyz/api/webhooks/quickbooks`, `https://app.tidemill.xyz/api/connectors/quickbooks/oauth/callback`.
 
 ### Quickstart
 
@@ -227,7 +220,7 @@ terraform output nameservers
 # → Set these as custom nameservers for tidemill.xyz at your registrar
 
 # 6. Verify (wait ~2 min for cloud-init + DNS propagation)
-curl https://tidemill.xyz/healthz
+curl https://app.tidemill.xyz/healthz
 
 # 7. Open the public landing page
 open https://tidemill.xyz
@@ -247,6 +240,26 @@ The server bootstraps itself on first boot via [`cloud-init.yml`](https://github
 5. Starts Docker Compose with both `docker-compose.yml` and `docker-compose.observability.yml`
 6. Enables unattended security updates
 7. Reboots if the kernel was updated
+
+### Deploying a New Version
+
+Production deploys are driven by [`scripts/deploy-remote.sh`](https://github.com/ondraz/tidemill/blob/main/scripts/deploy-remote.sh), invoked through the `make deploy` target. The script SSHes to the server over Tailscale, checks out the requested ref in `/opt/tidemill`, then rebuilds and recreates the Compose stack.
+
+**From CI (recommended):** the [`Deploy to Hetzner`](https://github.com/ondraz/tidemill/blob/main/.github/workflows/deploy.yml) workflow runs on three triggers:
+
+- Pushing a `release-*` tag (e.g. `git tag release-2026-05-18 && git push --tags`).
+- Publishing a GitHub Release — the release's tag is deployed.
+- Manual `workflow_dispatch` with a ref input (any branch, tag, or SHA).
+
+The workflow authenticates to Tailscale via the `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` repo secrets and then runs `make deploy DEPLOY_REF=<ref>`.
+
+**From your laptop** (you must be connected to the `tidemill` Tailnet):
+
+```bash
+make deploy                          # deploys the current tag, or HEAD if untagged
+make deploy DEPLOY_REF=release-2026-05-18
+make deploy DEPLOY_SERVER=tidemill@tidemill DEPLOY_REF=main
+```
 
 ### Observability
 
@@ -332,7 +345,7 @@ export KUBECONFIG=$(terraform output -raw kubeconfig_path)
 kubectl get pods -n tidemill
 
 # 4. Verify
-curl https://tidemill.xyz/healthz
+curl https://app.tidemill.xyz/healthz
 ```
 
 ### Scaling

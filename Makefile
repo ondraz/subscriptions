@@ -1,4 +1,4 @@
-.PHONY: help docs check check-integration seed dev dev-up dev-down dev-reset lint test typecheck install install-dev install-pre-commit frontend frontend-build dashboards-pull dashboards-diff
+.PHONY: help docs check check-integration seed dev dev-up dev-down dev-reset lint test typecheck install install-dev install-pre-commit frontend frontend-build dashboards-pull dashboards-diff deploy
 
 .DEFAULT_GOAL := help
 
@@ -111,6 +111,14 @@ dashboards-pull: ## Export Grafana dashboards to JSON files (then commit)
 
 dashboards-diff: ## Show drift between Grafana's live dashboards and committed JSON
 	@./scripts/grafana-dashboards.py diff
+
+
+DEPLOY_SERVER ?= tidemill@tidemill
+DEPLOY_REF    ?= $(shell git describe --tags --exact-match 2>/dev/null || git rev-parse HEAD)
+
+deploy: ## Deploy DEPLOY_REF (default: current tag or HEAD) to DEPLOY_SERVER via Tailscale SSH
+	@echo "==> Deploying $(DEPLOY_REF) to $(DEPLOY_SERVER)"
+	ssh -o StrictHostKeyChecking=no $(DEPLOY_SERVER) "REF=$(DEPLOY_REF) bash -s" < scripts/deploy-remote.sh
 
 
 .PHONY: install-post-hooks
