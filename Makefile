@@ -1,4 +1,4 @@
-.PHONY: help docs check check-integration seed dev dev-up dev-down dev-reset lint test typecheck install install-dev install-pre-commit frontend frontend-build dashboards-pull dashboards-diff deploy
+.PHONY: help docs check check-integration seed dev dev-up dev-down dev-reset lint test typecheck install install-dev install-pre-commit frontend frontend-build dashboards-pull dashboards-diff deploy prod-reset
 
 .DEFAULT_GOAL := help
 
@@ -81,7 +81,7 @@ COMPOSE_DEV := docker compose \
 dev-up: ## Start dev environment
 	$(COMPOSE_DEV) up -d
 	@echo ""
-	@echo "Infrastructure running: PostgreSQL :5432, Redpanda :9092, OTEL :4317, Grafana :3000"
+	@echo "Infrastructure running: PostgreSQL :5434, Redpanda :9092, OTEL :4317, Grafana :3000"
 	@echo "Starting stripe listen (PID written to /tmp/stripe-listen-dev.pid)..."
 	@stripe listen --forward-to http://localhost:8000/api/webhooks/stripe --latest > /tmp/stripe-listen-dev.log 2>&1 & echo $$! > /tmp/stripe-listen-dev.pid
 
@@ -119,6 +119,10 @@ DEPLOY_REF    ?= $(shell git describe --tags --exact-match 2>/dev/null || git re
 deploy: ## Deploy DEPLOY_REF (default: current tag or HEAD) to DEPLOY_SERVER via Tailscale SSH
 	@echo "==> Deploying $(DEPLOY_REF) to $(DEPLOY_SERVER)"
 	ssh -o StrictHostKeyChecking=no $(DEPLOY_SERVER) "REF=$(DEPLOY_REF) bash -s" < scripts/deploy-remote.sh
+
+prod-reset: ## Wipe production Docker volumes (postgres, redpanda, observability) and restart the stack
+	@echo "==> Wiping all volumes on $(DEPLOY_SERVER) and restarting services"
+	ssh -o StrictHostKeyChecking=no $(DEPLOY_SERVER) 'bash -s' < scripts/wipe-remote.sh
 
 
 .PHONY: install-post-hooks

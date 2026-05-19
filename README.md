@@ -45,7 +45,7 @@ make seed
 make dev
 
 # Start the API server (separate terminal)
-TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:test@localhost:5432/tidemill \
+TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:test@localhost:5434/tidemill \
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
 uv run uvicorn tidemill.api.app:app --port 8000 --reload
 ```

@@ -28,7 +28,7 @@ make seed
 make dev
 
 # 4. Start API server (separate terminal)
-TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:test@localhost:5432/tidemill \
+TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:test@localhost:5434/tidemill \
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
 AUTH_ENABLED=false \
 uv run uvicorn tidemill.api.app:app --port 8000 --reload
@@ -47,7 +47,7 @@ Starts infrastructure + observability services in Docker and a background `strip
 
 | Service        | Port   | Description                                      |
 |----------------|--------|--------------------------------------------------|
-| PostgreSQL     | :5432  | `tidemill` database                              |
+| PostgreSQL     | :5434  | `tidemill` database                              |
 | Redpanda       | :9092  | Kafka-compatible broker                          |
 | OTEL Collector | :4317  | OTLP gRPC receiver (traces + metrics)            |
 | Grafana        | :3000  | Observability UI — traces, logs, metrics         |
@@ -117,7 +117,7 @@ Press **F5** to launch the API with the debugger attached (uses the workspace la
 
 ```bash
 # API server (with live reload)
-TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:test@localhost:5432/tidemill \
+TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:test@localhost:5434/tidemill \
 KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
 AUTH_ENABLED=false \
 uv run uvicorn tidemill.api.app:app --port 8000 --reload

@@ -12,7 +12,7 @@
 # are already in your shell — the only secrets you still need come from
 # deploy/compose/.env (POSTGRES_PASSWORD, GRAFANA_ADMIN_PASSWORD).
 #
-#   TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:<POSTGRES_PASSWORD>@localhost:5432/tidemill \
+#   TIDEMILL_DATABASE_URL=postgresql+asyncpg://tidemill:<POSTGRES_PASSWORD>@localhost:5434/tidemill \
 #   KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
 #   AUTH_ENABLED=false \
 #   uv run uvicorn tidemill.api.app:app --host 0.0.0.0 --port 8000 --reload
@@ -22,7 +22,7 @@
 services:
   postgres:
     ports:
-      - "5432:5432"
+      - "5434:5432"
 
   redpanda:
     command:

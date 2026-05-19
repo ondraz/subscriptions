@@ -397,7 +397,17 @@
     .wf-chart .tick-x   { font: 500 10.5px var(--font-body); fill: var(--fg-2); letter-spacing: 0.01em; }
     .wf-chart .ending-line { fill: none; stroke: #1C1917; stroke-width: 2; }
     .wf-chart .ending-dot  { fill: #1C1917; stroke: #fff; stroke-width: 1.5; }
-    .wf-chart .ending-label { font: 600 10px var(--font-mono); fill: #1C1917; }
+    .wf-chart .ending-label {
+      font: 600 11px var(--font-mono);
+      fill: #1C1917;
+      /* Halo keeps the label readable even when a bar's gross-positive stack
+         (start + new + expansion + reactivation) overshoots the net ending
+         and visually sits behind the label. */
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 3;
+      stroke-linejoin: round;
+    }
     .wf-chart rect.bar      { animation: bar-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both; transform-origin: center bottom; }
     @keyframes bar-rise {
       from { transform: scaleY(0); opacity: 0; }
@@ -1026,7 +1036,7 @@
           <circle class="ending-dot" cx="434" cy="83.5"  r="4.5"/>
           <circle class="ending-dot" cx="541" cy="71.5"  r="4.5"/>
           <circle class="ending-dot" cx="648" cy="58.6"  r="4.5"/>
-          <text class="ending-label" x="648" y="48" text-anchor="middle">$147.6k</text>
+          <text class="ending-label" x="648" y="26" text-anchor="middle">$147.6k</text>
 
           <!-- x-axis -->
           <line class="axis" x1="60" y1="305" x2="700" y2="305"/>
